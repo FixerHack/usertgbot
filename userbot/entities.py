@@ -1,0 +1,28 @@
+"""Resolve a Telegram id/entity to a clickable reference for notifications."""
+
+from __future__ import annotations
+
+from userbot import formatting
+
+
+def _name(entity) -> str | None:
+    parts = [getattr(entity, "first_name", None), getattr(entity, "last_name", None)]
+    return " ".join(p for p in parts if p) or getattr(entity, "title", None)
+
+
+async def resolve(client, entity_or_id) -> tuple[str, bool]:
+    """Return (clickable reference, is_bot). Bot check lets callers skip the
+    platform's own bots so the userbot never reacts to itself."""
+    try:
+        entity = await client.get_entity(entity_or_id)
+    except Exception:
+        return formatting.entity_ref(entity_or_id if isinstance(entity_or_id, int) else None), False
+    ref_str = formatting.entity_ref(
+        getattr(entity, "id", None), getattr(entity, "username", None), _name(entity)
+    )
+    return ref_str, bool(getattr(entity, "bot", False))
+
+
+async def ref(client, entity_or_id) -> str:
+    ref_str, _ = await resolve(client, entity_or_id)
+    return ref_str
