@@ -1,0 +1,158 @@
+"""Cross-service DB query helpers: subscriptions, quota, settings, saved msgs."""
+
+from datetime import date, datetime, timedelta, timezone
+
+from db import queries
+from db.models import Subscription, SubscriptionStatus
+from management_bot.storage import upsert_user
+
+
+async def _user(db_session, telegram_id=1001):
+    user = await upsert_user(db_session, telegram_id)
+    return user
+
+
+async def test_active_subscription_respects_expiry(db_session):
+    user = await _user(db_session)
+    now = datetime(2026, 8, 22, tzinfo=timezone.utc)
+    db_session.add(
+        Subscription(
+            user_id=user.id,
+            tariff="pro",
+            status=SubscriptionStatus.ACTIVE,
+            payment_provider="stub",
+            expires_at=now - timedelta(days=1),  # expired
+        )
+    )
+    await db_session.flush()
+    assert await queries.get_active_subscription_for_user(db_session, user.id, now=now) is None
+
+    db_session.add(
+        Subscription(
+            user_id=user.id,
+            tariff="pro",
+            status=SubscriptionStatus.ACTIVE,
+            payment_provider="stub",
+            expires_at=now + timedelta(days=5),  # valid
+        )
+    )
+    await db_session.flush()
+    active = await queries.get_active_subscription_for_user(db_session, user.id, now=now)
+    assert active is not None and active.tariff == "pro"
+
+
+async def test_consume_check_enforces_quota(db_session):
+    user = await _user(db_session)
+    today = date(2026, 8, 22)
+    results = [await queries.consume_check(db_session, user.id, 3, today=today) for _ in range(4)]
+    assert [r.allowed for r in results] == [True, True, True, False]
+    assert results[2].remaining == 0
+    assert results[3].used == 3  # not incremented past the cap
+
+
+async def test_check_quota_resets_next_month(db_session):
+    user = await _user(db_session)
+    await queries.consume_check(db_session, user.id, 5, today=date(2026, 8, 31))
+    await queries.consume_check(db_session, user.id, 5, today=date(2026, 8, 31))
+    peek_aug = await queries.peek_check_quota(db_session, user.id, 5, today=date(2026, 8, 31))
+    assert peek_aug.used == 2
+
+    sept = await queries.consume_check(db_session, user.id, 5, today=date(2026, 9, 1))
+    assert sept.used == 1  # reset on new month
+
+
+async def test_settings_roundtrip(db_session):
+    user = await _user(db_session)
+    await queries.set_me_card(db_session, user.id, {"text": "hi"})
+    await queries.set_autoresponder(db_session, user.id, {"enabled": True, "message": "away"})
+    row = await queries.get_or_create_settings(db_session, user.id)
+    assert row.me_card == {"text": "hi"}
+    assert row.autoresponder["enabled"] is True
+
+
+async def test_ignored_chats_add_list_remove(db_session):
+    from db.queries import add_ignored_chat, is_chat_ignored, list_ignored_chats, remove_ignored_chat
+
+    user = await _user(db_session)
+
+    assert await is_chat_ignored(db_session, user.id, 555) is False
+    assert await list_ignored_chats(db_session, user.id) == []
+
+    await add_ignored_chat(db_session, user.id, 555, chat_title="Test Group")
+    assert await is_chat_ignored(db_session, user.id, 555) is True
+
+    chats = await list_ignored_chats(db_session, user.id)
+    assert len(chats) == 1 and chats[0].chat_id == 555 and chats[0].chat_title == "Test Group"
+
+    # adding the same chat again is a no-op, not a duplicate row
+    await add_ignored_chat(db_session, user.id, 555)
+    assert len(await list_ignored_chats(db_session, user.id)) == 1
+
+    await remove_ignored_chat(db_session, user.id, 555)
+    assert await is_chat_ignored(db_session, user.id, 555) is False
+    assert await list_ignored_chats(db_session, user.id) == []
+
+    # removing something not present is a safe no-op
+    await remove_ignored_chat(db_session, user.id, 999)
+
+
+async def test_deactivate_user_sessions(db_session):
+    from db.queries import deactivate_session, deactivate_user_sessions
+    from management_bot.storage import save_session
+
+    user = await _user(db_session)
+    await save_session(db_session, telegram_id=1001, phone_number="+111", session_string="a")
+    await save_session(db_session, telegram_id=1001, phone_number="+222", session_string="b")
+    await db_session.flush()
+
+    count = await deactivate_user_sessions(db_session, user.id)
+    assert count == 2
+
+    from sqlalchemy import select
+
+    from db.models import Session
+
+    active = (await db_session.execute(select(Session).where(Session.is_active.is_(True)))).scalars().all()
+    assert active == []
+
+    # deactivate_session is a no-op on an unknown id and idempotent otherwise
+    await deactivate_session(db_session, 99999)
+
+
+async def test_media_upsert_and_delete(db_session):
+    user = await _user(db_session)
+    from db.queries import delete_media, set_media
+    from userbot.storage import load_media
+
+    await set_media(db_session, user.id, "me", b"\x89PNG-first", mime="image/png")
+    assert await load_media(db_session, user.id, "me") == b"\x89PNG-first"
+
+    await set_media(db_session, user.id, "me", b"second", mime="image/jpeg")
+    assert await load_media(db_session, user.id, "me") == b"second"  # upsert, not duplicate
+
+    await delete_media(db_session, user.id, "me")
+    assert await load_media(db_session, user.id, "me") is None
+
+
+async def test_saved_messages(db_session):
+    user = await _user(db_session)
+    await queries.save_captured_message(
+        db_session,
+        owner_user_id=user.id,
+        chat_id=555,
+        message_id=1,
+        event_type="deleted",
+        text="bye",
+    )
+    await queries.save_captured_message(
+        db_session,
+        owner_user_id=user.id,
+        chat_id=555,
+        message_id=2,
+        event_type="edited",
+        text="new",
+        previous_text="old",
+    )
+    saved = await queries.list_saved_messages(db_session, user.id)
+    assert len(saved) == 2
+    assert saved[0].event_type == "edited"  # newest first
