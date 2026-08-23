@@ -1,0 +1,44 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "management-bot",
+      "type": "shell",
+      "command": "uv run management-bot",
+      "isBackground": true,
+      "presentation": { "group": "bots", "panel": "dedicated", "reveal": "always" },
+      "problemMatcher": []
+    },
+    {
+      "label": "manager-bot",
+      "type": "shell",
+      "command": "uv run manager-bot",
+      "isBackground": true,
+      "presentation": { "group": "bots", "panel": "dedicated", "reveal": "always" },
+      "problemMatcher": []
+    },
+    {
+      "label": "userbot-worker",
+      "type": "shell",
+      "command": "uv run userbot-worker",
+      "isBackground": true,
+      "presentation": { "group": "bots", "panel": "dedicated", "reveal": "always" },
+      "problemMatcher": []
+    },
+    {
+      "label": "Start all bots",
+      "dependsOn": ["management-bot", "manager-bot", "userbot-worker"],
+      "dependsOrder": "parallel",
+      "problemMatcher": []
+    },
+    {
+      "label": "healthcheck",
+      "type": "shell",
+      "windows": { "command": "scripts\\healthcheck.bat" },
+      "linux": { "command": "bash scripts/healthcheck.sh" },
+      "osx": { "command": "bash scripts/healthcheck.sh" },
+      "presentation": { "panel": "dedicated", "reveal": "always" },
+      "problemMatcher": []
+    }
+  ]
+}
