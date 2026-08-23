@@ -1,0 +1,289 @@
+"""/subscribe: a tariff carousel + payment (Telegram Stars or Crypto Pay).
+
+Flow: browse tariffs (◀️/▶️) → «Купити» → choose method → pay.
+• Stars: send_invoice(XTR); pre_checkout answered ok; successful_payment activates.
+• Crypto: Crypto Pay invoice + a «Перевірити оплату» button that polls status.
+The tariff is held as a PENDING subscription until payment is confirmed.
+
+Prices are computed live (shared.pricing.compute_prices) from each plan's
+fixed profit_uah target, grossed up per channel so profit never drops below
+that target regardless of the live exchange rate or that channel's fee.
+"""
+
+import logging
+from pathlib import Path
+
+from aiogram import F, Router
+from aiogram.filters import Command
+from aiogram.types import (
+    BufferedInputFile,
+    CallbackQuery,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    LabeledPrice,
+    Message,
+    PreCheckoutQuery,
+)
+
+from db.session import get_session
+from management_bot import keyboards, subscriptions
+from management_bot.config import settings
+from management_bot.payment.crypto_pay import CryptoPayProvider
+from shared.i18n import features, lang_of, t
+from shared.pricing import PriceBreakdown, compute_prices
+from shared.tariffs import PLANS, Tariff, get_plan
+
+logger = logging.getLogger(__name__)
+router = Router(name="subscribe")
+
+TARIFF_ORDER = list(PLANS.keys())
+
+# Optional per-tariff image: assets/tariffs/<tariff-id>.(jpg|jpeg|png|webp).
+# Missing file -> falls back to a text-only card, so images are fully optional.
+ASSETS_DIR = Path(__file__).resolve().parents[2] / "assets" / "tariffs"
+_IMAGE_SUFFIXES = (".jpg", ".jpeg", ".png", ".webp")
+
+
+def _tariff_image(tariff_id: str) -> Path | None:
+    for suffix in _IMAGE_SUFFIXES:
+        path = ASSETS_DIR / f"{tariff_id}{suffix}"
+        if path.exists():
+            return path
+    return None
+
+
+def _crypto() -> CryptoPayProvider | None:
+    if not settings.crypto_pay_token:
+        return None
+    return CryptoPayProvider(
+        settings.crypto_pay_token, testnet=settings.crypto_pay_testnet, fiat=settings.crypto_pay_fiat
+    )
+
+
+# --- carousel --------------------------------------------------------------
+
+
+def _card_text(plan, prices: PriceBreakdown | None, lang: str) -> str:
+    lines = [f"💳 <b>{plan.title}</b>"]
+    if plan.available and prices is not None:
+        lines.append(f"{prices.usdt_invoice} USDT  ·  {prices.stars}⭐")
+    lines.append("")
+    lines.extend(f"• {f}" for f in features(lang, plan.id))
+    return "\n".join(lines)
+
+
+def _carousel_kb(idx: int, lang: str) -> InlineKeyboardMarkup:
+    plan = PLANS[TARIFF_ORDER[idx]]
+    prev_i = (idx - 1) % len(TARIFF_ORDER)
+    next_i = (idx + 1) % len(TARIFF_ORDER)
+    mid = (
+        InlineKeyboardButton(text=t(lang, "sub_buy"), callback_data=f"sub:buy:{plan.id}")
+        if plan.available
+        else InlineKeyboardButton(text=t(lang, "sub_in_dev_btn"), callback_data="sub:nop")
+    )
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="◀️", callback_data=f"sub:nav:{prev_i}"),
+                mid,
+                InlineKeyboardButton(text="▶️", callback_data=f"sub:nav:{next_i}"),
+            ]
+        ]
+    )
+
+
+def _methods_kb(tariff_id: str, idx: int, prices: PriceBreakdown, lang: str) -> InlineKeyboardMarkup:
+    rows = [[InlineKeyboardButton(text=t(lang, "sub_pay_stars", stars=prices.stars), callback_data=f"sub:pay:{tariff_id}:stars")]]
+    if _crypto() is not None:
+        rows.append([InlineKeyboardButton(text=t(lang, "sub_pay_crypto", amount=prices.usdt_invoice), callback_data=f"sub:pay:{tariff_id}:crypto")])
+    rows.append([InlineKeyboardButton(text=t(lang, "sub_back"), callback_data=f"sub:nav:{idx}")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+async def _edit(message: Message, text: str, *, kb: InlineKeyboardMarkup | None = None) -> None:
+    """edit_text fails on a photo message (needs edit_caption instead) — the
+    tariff card may be either, so pick the right call."""
+    if message.photo:
+        await message.edit_caption(caption=text, reply_markup=kb)
+    else:
+        await message.edit_text(text, reply_markup=kb)
+
+
+async def _send_card(message: Message, idx: int, lang: str, *, text: str | None = None, kb: InlineKeyboardMarkup | None = None) -> None:
+    """Send a tariff card as a photo (if assets/tariffs/<id>.* exists) or text."""
+    plan = PLANS[TARIFF_ORDER[idx]]
+    if text is not None:
+        body, markup = text, (kb if kb is not None else _carousel_kb(idx, lang))
+    else:
+        prices = await compute_prices(plan.profit_uah) if plan.available else None
+        body, markup = _card_text(plan, prices, lang), (kb if kb is not None else _carousel_kb(idx, lang))
+    image = _tariff_image(plan.id)
+    if image is not None:
+        await message.answer_photo(
+            BufferedInputFile(image.read_bytes(), filename=image.name), caption=body, reply_markup=markup
+        )
+    else:
+        await message.answer(body, reply_markup=markup)
+
+
+@router.message(Command("subscribe"))
+async def cmd_subscribe(message: Message) -> None:
+    await _send_card(message, 0, lang_of(message))
+
+
+@router.callback_query(F.data == "sub:nop")
+async def on_nop(callback: CallbackQuery) -> None:
+    await callback.answer(t(lang_of(callback), "sub_in_dev_alert"), show_alert=True)
+
+
+@router.callback_query(F.data.startswith("sub:nav:"))
+async def on_nav(callback: CallbackQuery) -> None:
+    idx = int(callback.data.rsplit(":", 1)[1]) % len(TARIFF_ORDER)
+    await _send_card(callback.message, idx, lang_of(callback))
+    await callback.message.delete()
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("sub:buy:"))
+async def on_buy(callback: CallbackQuery) -> None:
+    lang = lang_of(callback)
+    tariff_id = callback.data.rsplit(":", 1)[1]
+    plan = get_plan(tariff_id)
+    if not plan.available:
+        await callback.answer(t(lang, "sub_unavailable"), show_alert=True)
+        return
+    idx = TARIFF_ORDER.index(Tariff(tariff_id))
+    prices = await compute_prices(plan.profit_uah)
+    await _send_card(
+        callback.message, idx, lang,
+        text=f"{_card_text(plan, prices, lang)}\n\n{t(lang, 'sub_choose_method')}",
+        kb=_methods_kb(tariff_id, idx, prices, lang),
+    )
+    await callback.message.delete()
+    await callback.answer()
+
+
+# --- Telegram Stars --------------------------------------------------------
+
+
+@router.callback_query(F.data.startswith("sub:pay:") & F.data.endswith(":stars"))
+async def on_pay_stars(callback: CallbackQuery) -> None:
+    lang = lang_of(callback)
+    tariff_id = callback.data.split(":")[2]
+    plan = get_plan(tariff_id)
+    prices = await compute_prices(plan.profit_uah)
+    user = callback.from_user
+    async with get_session() as db:
+        sub = await subscriptions.create_pending(
+            db, telegram_id=user.id, tariff=Tariff(tariff_id), provider_name="stars",
+            username=user.username, full_name=user.full_name,
+        )
+        await db.commit()
+        sub_id = sub.id
+    await callback.message.answer_invoice(
+        title=t(lang, "sub_stars_title", title=plan.title),
+        description=t(lang, "sub_stars_desc", title=plan.title),
+        payload=f"sub:{sub_id}",
+        provider_token="",  # empty for Telegram Stars (XTR)
+        currency="XTR",
+        prices=[LabeledPrice(label=plan.title, amount=prices.stars)],
+    )
+    await callback.answer()
+
+
+@router.pre_checkout_query()
+async def on_pre_checkout(query: PreCheckoutQuery) -> None:
+    await query.answer(ok=True)
+
+
+@router.message(F.successful_payment)
+async def on_successful_payment(message: Message) -> None:
+    lang = lang_of(message)
+    payload = message.successful_payment.invoice_payload
+    if not payload.startswith("sub:"):
+        return
+    sub_id = int(payload.split(":", 1)[1])
+    async with get_session() as db:
+        sub = await subscriptions.get_subscription(db, sub_id)
+        if sub is None:
+            return
+        await subscriptions.activate(db, sub)
+        await db.commit()
+        title = get_plan(sub.tariff).title
+    await message.answer(
+        t(lang, "sub_success", title=title) + "\n" + t(lang, "sub_connect_hint"),
+        reply_markup=keyboards.main_menu(lang),
+    )
+
+
+# --- Crypto Pay ------------------------------------------------------------
+
+
+@router.callback_query(F.data.startswith("sub:pay:") & F.data.endswith(":crypto"))
+async def on_pay_crypto(callback: CallbackQuery) -> None:
+    lang = lang_of(callback)
+    provider = _crypto()
+    if provider is None:
+        await callback.answer(t(lang, "sub_crypto_unavailable"), show_alert=True)
+        return
+    tariff_id = callback.data.split(":")[2]
+    plan = get_plan(tariff_id)
+    prices = await compute_prices(plan.profit_uah)
+    user = callback.from_user
+    async with get_session() as db:
+        sub = await subscriptions.create_pending(
+            db, telegram_id=user.id, tariff=Tariff(tariff_id), provider_name="crypto_pay",
+            username=user.username, full_name=user.full_name,
+        )
+        await db.commit()
+        sub_id = sub.id
+    try:
+        invoice = await provider.create_invoice(
+            amount=prices.usdt_invoice, description=t(lang, "sub_stars_title", title=plan.title), payload=f"sub:{sub_id}"
+        )
+    except Exception:
+        logger.exception("crypto invoice failed")
+        await callback.answer(t(lang, "sub_invoice_error"), show_alert=True)
+        return
+    async with get_session() as db:
+        sub = await subscriptions.get_subscription(db, sub_id)
+        sub.external_invoice_id = invoice.invoice_id
+        await db.commit()
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text=t(lang, "sub_pay_btn"), url=invoice.pay_url)],
+            [InlineKeyboardButton(text=t(lang, "sub_check_btn"), callback_data=f"sub:check:{sub_id}")],
+        ]
+    )
+    await _edit(callback.message, t(lang, "sub_crypto_prompt", title=plan.title, amount=prices.usdt_invoice), kb=kb)
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("sub:check:"))
+async def on_check_crypto(callback: CallbackQuery) -> None:
+    lang = lang_of(callback)
+    provider = _crypto()
+    sub_id = int(callback.data.rsplit(":", 1)[1])
+    async with get_session() as db:
+        sub = await subscriptions.get_subscription(db, sub_id)
+        invoice_id = sub.external_invoice_id if sub else None
+    if provider is None or sub is None or invoice_id is None:
+        await callback.answer(t(lang, "sub_no_invoice"), show_alert=True)
+        return
+    try:
+        paid = await provider.is_paid(invoice_id)
+    except Exception:
+        logger.exception("crypto status check failed")
+        await callback.answer(t(lang, "sub_check_error"), show_alert=True)
+        return
+    if not paid:
+        await callback.answer(t(lang, "sub_not_paid"), show_alert=True)
+        return
+    async with get_session() as db:
+        sub = await subscriptions.get_subscription(db, sub_id)
+        await subscriptions.activate(db, sub)
+        await db.commit()
+        title = get_plan(sub.tariff).title
+    await _edit(callback.message, t(lang, "sub_success", title=title))
+    await callback.message.answer(t(lang, "sub_connect_hint"), reply_markup=keyboards.main_menu(lang))
+    await callback.answer()
