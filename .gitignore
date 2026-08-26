@@ -20,3 +20,9 @@ metrics/*.jsonl
 
 # Test data dumps
 Telegram.csv
+
+# Standalone debug/prototype tools — isolated scratch work, not part of the
+# shipped product (each has its own README explaining what it's for)
+test_mono/
+test_login/
+files.zip
