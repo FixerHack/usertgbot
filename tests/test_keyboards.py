@@ -13,7 +13,7 @@ def test_masked_code():
 def test_code_keyboard_layout():
     kb = keyboards.code_keyboard()
     rows = kb.inline_keyboard
-    assert len(rows) == 4  # 1-9 in three rows + control row
+    assert len(rows) == 5  # 1-9 in three rows + control row + SMS-resend row
 
     labels = [btn.text for row in rows for btn in row]
     for digit in "123456789":
@@ -27,6 +27,7 @@ def test_code_keyboard_layout():
     assert f"{keyboards.CB_DIGIT}7" in all_cb
     assert keyboards.CB_BACKSPACE in all_cb
     assert keyboards.CB_SUBMIT in all_cb
+    assert keyboards.CB_RESEND_SMS in all_cb
 
 
 def test_phone_request_keyboard():

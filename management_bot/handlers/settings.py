@@ -12,11 +12,11 @@ from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMar
 
 from db import queries
 from db.session import get_session
-from management_bot import storage
+from management_bot import keyboards, storage
 from management_bot.handlers import connect
 from management_bot.storage import upsert_user
 from shared.i18n import lang_of, t
-from shared.settings_schema import Autoresponder, MeCard, parse_buttons, parse_hhmm
+from shared.settings_schema import Autoresponder, Features, MeCard, parse_buttons, parse_hhmm
 from shared.tariffs import Tariff, get_plan
 
 logger = logging.getLogger(__name__)
@@ -43,6 +43,8 @@ def _main_menu(has_account: bool, lang: str) -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text=t(lang, "set_btn_me"), callback_data="set:me")],
         [InlineKeyboardButton(text=t(lang, "set_btn_ar"), callback_data="set:ar")],
         [InlineKeyboardButton(text=t(lang, "set_btn_ignored"), callback_data="set:ignored")],
+        [InlineKeyboardButton(text=t(lang, "set_btn_features"), callback_data="set:features")],
+        [InlineKeyboardButton(text=t(lang, "set_btn_lang"), callback_data="set:lang")],
     ]
     if has_account:
         rows.append([InlineKeyboardButton(text=t(lang, "set_btn_unlink"), callback_data="set:unlink")])
@@ -130,6 +132,45 @@ def _ar_menu(lang: str) -> InlineKeyboardMarkup:
     )
 
 
+def _lang_menu(lang: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text=t(lang, "lang_uk"), callback_data="set:lang:uk")],
+            [InlineKeyboardButton(text=t(lang, "lang_ru"), callback_data="set:lang:ru")],
+            [InlineKeyboardButton(text=t(lang, "lang_en"), callback_data="set:lang:en")],
+            [InlineKeyboardButton(text=t(lang, "btn_back"), callback_data="set:back")],
+        ]
+    )
+
+
+def _feat_label(lang: str, key: str, enabled: bool) -> str:
+    mark = "✅" if enabled else "❌"
+    return f"{mark} {t(lang, key)}"
+
+
+_FEATURE_ROWS = [
+    [("deleted", "feat_deleted"), ("edited", "feat_edited")],
+    [("info", "feat_info"), ("me", "feat_me")],
+    [("ban", "feat_ban"), ("check", "feat_check")],
+    [("viewonce_photo", "feat_viewonce_photo"), ("viewonce_voice", "feat_viewonce_voice")],
+]
+
+
+def _features_menu(features: Features, lang: str) -> InlineKeyboardMarkup:
+    rows = [
+        [
+            InlineKeyboardButton(
+                text=_feat_label(lang, label_key, getattr(features, field)),
+                callback_data=f"set:features:toggle:{field}",
+            )
+            for field, label_key in row
+        ]
+        for row in _FEATURE_ROWS
+    ]
+    rows.append([InlineKeyboardButton(text=t(lang, "btn_back"), callback_data="set:back")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
 def _ignored_menu(chats: list, lang: str) -> InlineKeyboardMarkup:
     rows = [
         [InlineKeyboardButton(text=f"✕ {c.chat_title or c.chat_id}", callback_data=f"set:ignored:rm:{c.chat_id}")]
@@ -206,6 +247,59 @@ async def on_ignored_remove(callback: CallbackQuery) -> None:
     header = t(lang, "ignored_header") if chats else t(lang, "ignored_empty")
     await callback.message.edit_text(header, reply_markup=_ignored_menu(chats, lang))
     await callback.answer(t(lang, "ignored_removed"))
+
+
+async def _load_features(session, telegram_id: int) -> tuple[int | None, Features]:
+    user = await queries.get_user_by_telegram_id(session, telegram_id)
+    if user is None:
+        return None, Features()
+    row = await queries.get_or_create_settings(session, user.id)
+    return user.id, Features.from_dict(row.features)
+
+
+@router.callback_query(F.data == "set:features")
+async def on_features(callback: CallbackQuery) -> None:
+    lang = lang_of(callback)
+    async with get_session() as db:
+        _, features = await _load_features(db, callback.message.chat.id)
+    await callback.message.edit_text(t(lang, "features_title"), reply_markup=_features_menu(features, lang))
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("set:features:toggle:"))
+async def on_features_toggle(callback: CallbackQuery) -> None:
+    lang = lang_of(callback)
+    key = callback.data.rsplit(":", 1)[1]
+    async with get_session() as db:
+        uid, features = await _load_features(db, callback.message.chat.id)
+        if uid is None:
+            await callback.answer()
+            return
+        setattr(features, key, not getattr(features, key))
+        await queries.set_features(db, uid, features.to_dict())
+        await db.commit()
+    await callback.message.edit_text(t(lang, "features_title"), reply_markup=_features_menu(features, lang))
+    await callback.answer()
+
+
+@router.callback_query(F.data == "set:lang")
+async def on_lang(callback: CallbackQuery) -> None:
+    lang = lang_of(callback)
+    await callback.message.edit_text(t(lang, "lang_title"), reply_markup=_lang_menu(lang))
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("set:lang:"))
+async def on_lang_pick(callback: CallbackQuery) -> None:
+    chosen = callback.data.rsplit(":", 1)[1]
+    async with get_session() as db:
+        await queries.set_user_language_manual(db, callback.message.chat.id, chosen)
+        await db.commit()
+        text, kb = await _build_settings(db, callback.message.chat.id, chosen)
+    await callback.answer(t(chosen, "lang_saved"))
+    await callback.message.edit_text(text, reply_markup=kb)
+    # the persistent reply-keyboard labels only refresh on a new message
+    await callback.message.answer(t(chosen, "lang_saved"), reply_markup=keyboards.main_menu(chosen))
 
 
 @router.callback_query(F.data == "set:link")

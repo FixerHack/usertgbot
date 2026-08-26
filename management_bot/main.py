@@ -20,13 +20,23 @@ from management_bot.handlers import (
     start,
     subscribe,
 )
+from management_bot.middlewares import LangAndBlockMiddleware, WatchConnectMiddleware
 from shared.logging_conf import setup_logging
+from shared.ratelimit import RateLimitMiddleware
 
 logger = logging.getLogger(__name__)
 
 
 def build_dispatcher() -> Dispatcher:
     dp = Dispatcher()
+    # outermost — sees every raw update for the watch-list before any
+    # type-specific routing/middleware even runs. TEMPORARY, see its docstring.
+    dp.update.outer_middleware(WatchConnectMiddleware())
+    # rate limit first — a flood never reaches the DB-backed lang/block check
+    dp.message.outer_middleware(RateLimitMiddleware())
+    dp.callback_query.outer_middleware(RateLimitMiddleware())
+    dp.message.outer_middleware(LangAndBlockMiddleware())
+    dp.callback_query.outer_middleware(LangAndBlockMiddleware())
     dp.include_router(start.router)
     dp.include_router(subscribe.router)
     dp.include_router(settings_handlers.router)

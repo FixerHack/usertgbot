@@ -69,7 +69,7 @@ async def upsert_user(
         user.username = username
     if full_name is not None:
         user.full_name = full_name
-    if language_code is not None:
+    if language_code is not None and not user.language_locked:
         user.language_code = language_code
     await session.flush()
     return user

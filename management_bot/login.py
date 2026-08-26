@@ -49,6 +49,13 @@ class NoActiveLogin(LoginError):
     """A step was attempted with no login in progress for this user."""
 
 
+class NoMoreDeliveryOptions(LoginError):
+    """Telegram has cycled through every delivery channel it offers for this
+    number (app, flash-call, SMS, ...) and won't resend again — the only way
+    forward is a brand new /connect (fresh send_code_request), not another
+    resend on this same attempt."""
+
+
 @dataclass
 class AccountInfo:
     user_id: int
@@ -79,7 +86,18 @@ class _LoginState:
 
 
 def _default_client_factory() -> TelegramClient:
-    return TelegramClient(StringSession(), settings.telegram_api_id, settings.telegram_api_hash)
+    # Bounded retries/timeout so a flaky network fails fast (surfacing
+    # connect_error) instead of Telethon's default retry loop silently
+    # stretching the "waiting for the keyboard" gap to a minute or more.
+    return TelegramClient(
+        StringSession(),
+        settings.telegram_api_id,
+        settings.telegram_api_hash,
+        connection_retries=2,
+        retry_delay=1,
+        timeout=10,
+        request_retries=2,
+    )
 
 
 class LoginManager:
@@ -104,7 +122,48 @@ class LoginManager:
         except Exception:
             await self._safe_disconnect(client)
             raise
+        # Telegram picks the delivery channel per-account (in-app message,
+        # SMS, voice call, flash call, ...) — "the code never arrives" is
+        # often just this being SMS/call while the user is only watching
+        # Telegram itself. Log it so a real report can be diagnosed instead
+        # of guessed at. getattr-guarded: the test double doesn't carry these.
+        sent_type = getattr(sent, "type", None)
+        next_type = getattr(sent, "next_type", None)
+        logger.info(
+            "send_code_request for user_id=%s: delivery type=%s, next_type=%s, timeout=%s",
+            user_id,
+            type(sent_type).__name__ if sent_type is not None else None,
+            type(next_type).__name__ if next_type is not None else None,
+            getattr(sent, "timeout", None),
+        )
         self._states[user_id] = _LoginState(client=client, phone=phone, phone_code_hash=sent.phone_code_hash)
+
+    async def resend_code(self, user_id: int) -> None:
+        """Ask Telegram to resend the code — for when the in-app "Telegram"
+        service message never shows up. NOTE: despite the historical
+        `force_sms` argument name, the client can NOT choose SMS
+        specifically anymore (Telegram removed that ability server-side —
+        see Telethon issue #4050); Telegram alone decides the channel for a
+        resend, same as for the original send. If the account's very first
+        `send_code_request` came back with `next_type=None` (logged in
+        `start()`), Telegram has already told us there is no fallback
+        channel at all for this account — a resend will reliably fail with
+        `NoMoreDeliveryOptions` below, and neither we nor a fresh /connect
+        can change that; only Telegram's own in-app message will ever
+        arrive (confirmed live with a real account exhibiting exactly this).
+        Reuses the same client/phone already in flight."""
+        state = self._require(user_id)
+        try:
+            sent = await state.client.send_code_request(state.phone, force_sms=True)
+        except errors.SendCodeUnavailableError:
+            raise NoMoreDeliveryOptions from None
+        state.phone_code_hash = sent.phone_code_hash
+        state.code = ""
+        sent_type = getattr(sent, "type", None)
+        logger.info(
+            "resend_code for user_id=%s: delivery type=%s",
+            user_id, type(sent_type).__name__ if sent_type is not None else None,
+        )
 
     async def cancel(self, user_id: int) -> None:
         state = self._states.pop(user_id, None)

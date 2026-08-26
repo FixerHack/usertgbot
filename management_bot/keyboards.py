@@ -28,6 +28,7 @@ CODE_LENGTH = 5
 CB_DIGIT = "cc:d:"   # + digit, e.g. "cc:d:7"
 CB_BACKSPACE = "cc:bs"
 CB_SUBMIT = "cc:ok"
+CB_RESEND_SMS = "cc:sms"
 
 
 def phone_request_keyboard(lang: str = "uk") -> ReplyKeyboardMarkup:
@@ -39,8 +40,11 @@ def phone_request_keyboard(lang: str = "uk") -> ReplyKeyboardMarkup:
     )
 
 
-def code_keyboard() -> InlineKeyboardMarkup:
-    """Numeric pad (1-9, then ⬅️ / 0 / ✅) for entering the login code."""
+def code_keyboard(lang: str = "uk") -> InlineKeyboardMarkup:
+    """Numeric pad (1-9, then ⬅️ / 0 / ✅) for entering the login code, plus
+    a fallback row to force an SMS resend if the in-app Telegram code never
+    shows up (that message can be delayed/suppressed independently of
+    anything our app does)."""
     rows: list[list[InlineKeyboardButton]] = []
     for start in range(1, 10, 3):
         rows.append(
@@ -56,6 +60,7 @@ def code_keyboard() -> InlineKeyboardMarkup:
             InlineKeyboardButton(text="✅", callback_data=CB_SUBMIT),
         ]
     )
+    rows.append([InlineKeyboardButton(text=t(lang, "btn_resend_sms"), callback_data=CB_RESEND_SMS)])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
