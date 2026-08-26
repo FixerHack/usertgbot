@@ -67,6 +67,26 @@ async def test_grant_revoke_block(db_session):
     assert row.is_blocked is True
 
 
+async def test_delete_user(db_session):
+    # a user WITH children (subscription + connected session) — this is
+    # exactly what caught a real bug: SQLAlchemy's default relationship
+    # cascade tries to NULL out the NOT NULL user_id on children before
+    # deleting the parent, unless the relationship is passive_deletes=True
+    # (letting the DB's own ON DELETE CASCADE handle it instead)
+    await upsert_user(db_session, 3001, username="dave")
+    await service.grant_subscription(db_session, 3001, "pro", days=30, now=NOW)
+    await save_session(db_session, telegram_id=3001, phone_number="+222", session_string="s")
+    await upsert_user(db_session, 3002, username="erin")
+
+    assert await service.delete_user(db_session, 3001) is True
+    assert [r.telegram_id for r in await service.list_users(db_session, now=NOW)] == [3002]
+
+    # deleting again (already gone) reports False, doesn't error
+    assert await service.delete_user(db_session, 3001) is False
+    # deleting a telegram_id that never existed also reports False
+    assert await service.delete_user(db_session, 999999) is False
+
+
 async def test_activity_series(db_session):
     from db.queries import save_captured_message
 

@@ -266,6 +266,19 @@ async def set_blocked(session: AsyncSession, telegram_id: int, blocked: bool) ->
     return True
 
 
+async def delete_user(session: AsyncSession, telegram_id: int) -> bool:
+    """Permanently remove a user and everything tied to them (subscriptions,
+    sessions, settings, ignored chats, saved messages, ...) — every FK to
+    users.id is ON DELETE CASCADE at the DB level, so deleting the row is
+    enough. Irreversible; the caller (admin panel) must confirm first."""
+    user = await _get_user(session, telegram_id)
+    if user is None:
+        return False
+    await session.delete(user)
+    await session.flush()
+    return True
+
+
 async def _get_user(session: AsyncSession, telegram_id: int) -> User | None:
     return (await session.execute(select(User).where(User.telegram_id == telegram_id))).scalar_one_or_none()
 

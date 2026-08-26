@@ -88,4 +88,10 @@ def create_app(token: str, *, db_dependency=_default_db) -> FastAPI:
         await db.commit()
         return {"ok": ok}
 
+    @app.post("/api/users/{telegram_id}/delete", dependencies=[Depends(require_token)])
+    async def delete_user(telegram_id: int, db: AsyncSession = Depends(db_dependency)) -> dict:
+        ok = await service.delete_user(db, telegram_id)
+        await db.commit()
+        return {"ok": ok}
+
     return app

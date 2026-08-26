@@ -36,6 +36,7 @@ PAGE = """<!doctype html>
   .u .meta{color:var(--muted);font-size:13px;margin:8px 0}
   .u .acts{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
   .u .acts button{padding:6px 9px;font-size:13px}
+  .u .acts button.danger{background:rgba(239,68,68,.15);color:var(--bad);border-color:rgba(239,68,68,.35)}
   .hidden{display:none}
   .muted{color:var(--muted)}
   .charts{display:grid;grid-template-columns:2fr 1fr;gap:14px;margin-top:16px}
@@ -177,6 +178,7 @@ function ucard(u){
       <button onclick="grant(${u.telegram_id},'pro')">+Pro</button>
       <button onclick="act(${u.telegram_id},'revoke')">−Підписку</button>
       ${u.is_blocked?`<button onclick="act(${u.telegram_id},'unblock')">Розбан</button>`:`<button onclick="act(${u.telegram_id},'block')">Бан</button>`}
+      <button class="danger" onclick="delUser(${Number(u.telegram_id)})">🗑 Видалити</button>
     </div>
   </div>`;
 }
@@ -193,6 +195,13 @@ async function loadUsers(){
 }
 async function grant(id,tariff){ await api(`/api/users/${id}/grant?tariff=${tariff}&days=30`,{method:'POST'}); loadUsers(); }
 async function act(id,what){ await api(`/api/users/${id}/${what}`,{method:'POST'}); loadUsers(); }
+async function delUser(id){
+  if(!confirm(`Видалити користувача ${id} назавжди? Це прибере підписки, сесії, налаштування — все. Дію не можна скасувати.`)) return;
+  try{
+    await api(`/api/users/${id}/delete`,{method:'POST'});
+    loadUsers();
+  }catch(e){ alert('Не вдалося видалити: '+e.message); }
+}
 
 loadMetrics();
 </script>
