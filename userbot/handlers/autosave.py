@@ -15,16 +15,37 @@ from telethon import TelegramClient, events
 from db.queries import get_active_subscription_for_user, is_chat_ignored, save_captured_message
 from db.session import get_session
 from shared.i18n import t
+from shared.settings_schema import Features
 from userbot import entities, formatting
 from userbot.context import WorkerContext
 from userbot.notify import notify_owner
+from userbot.storage import load_features
 
 logger = logging.getLogger(__name__)
 
+# Telegram caps callback_data at 64 bytes; leave room for "ignore_chat:" +
+# the chat id before truncating the title (UTF-8 byte-aware, so Cyrillic
+# titles don't overflow the limit).
+_TITLE_BYTE_BUDGET = 28
 
-def _ignore_chat_kb(chat_id: int, lang: str) -> InlineKeyboardMarkup:
+
+def _truncate_utf8(s: str, max_bytes: int) -> str:
+    raw = s.encode("utf-8")
+    if len(raw) <= max_bytes:
+        return s
+    return raw[:max_bytes].decode("utf-8", errors="ignore")
+
+
+def _ignore_chat_kb(chat_id: int, chat_title: str | None, lang: str) -> InlineKeyboardMarkup:
+    safe_title = _truncate_utf8((chat_title or "").replace(":", " ").strip(), _TITLE_BYTE_BUDGET)
     return InlineKeyboardMarkup(
-        inline_keyboard=[[InlineKeyboardButton(text=t(lang, "btn_ignore_chat"), callback_data=f"ignore_chat:{chat_id}")]]
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=t(lang, "btn_ignore_chat"), callback_data=f"ignore_chat:{chat_id}:{safe_title}"
+                )
+            ]
+        ]
     )
 
 
@@ -74,6 +95,11 @@ async def _handle(client, ctx, chat_id, message_id, sender_id, event_type, text,
         async with get_session() as db:
             if await get_active_subscription_for_user(db, ctx.owner_user_id) is None:
                 return
+            features = Features.from_dict(await load_features(db, ctx.owner_user_id))
+            if event_type == "deleted" and not features.deleted:
+                return
+            if event_type == "edited" and not features.edited:
+                return
             if await is_chat_ignored(db, ctx.owner_user_id, chat_id):
                 return
             await save_captured_message(
@@ -95,4 +121,5 @@ async def _handle(client, ctx, chat_id, message_id, sender_id, event_type, text,
         notice = formatting.format_deleted_notice(chat_ref, sender_ref, text, ctx.owner_lang)
     else:
         notice = formatting.format_edited_notice(chat_ref, sender_ref, previous_text or "", text or "", ctx.owner_lang)
-    await notify_owner(ctx, notice, reply_markup=_ignore_chat_kb(chat_id, ctx.owner_lang))
+    chat_title = await entities.plain_name(client, chat_id)
+    await notify_owner(ctx, notice, reply_markup=_ignore_chat_kb(chat_id, chat_title, ctx.owner_lang))

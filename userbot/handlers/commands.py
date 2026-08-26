@@ -17,13 +17,13 @@ from telethon.tl.functions.users import GetFullUserRequest
 from db.queries import consume_check
 from db.session import get_session
 from shared.i18n import t
-from shared.settings_schema import MeCard
+from shared.settings_schema import Features, MeCard
 from shared.tariffs import get_plan
 from userbot import formatting
 from userbot.context import WorkerContext
 from userbot.gating import check_command
 from userbot.notify import notify_owner
-from userbot.storage import load_media, load_me_card
+from userbot.storage import load_features, load_media, load_me_card
 
 logger = logging.getLogger(__name__)
 
@@ -41,10 +41,18 @@ BAN_RE = r"^\.ban\s*$"
 CHECK_RE = r"^\.check\b.*$"
 
 
+async def _feature_enabled(ctx: WorkerContext, name: str) -> bool:
+    async with get_session() as db:
+        return getattr(Features.from_dict(await load_features(db, ctx.owner_user_id)), name)
+
+
 def register(client: TelegramClient, ctx: WorkerContext) -> None:
     @client.on(events.NewMessage(outgoing=True, pattern=INFO_RE))
     async def handle_info(event: events.NewMessage.Event) -> None:
         if not await _gate(event, ctx, "info"):
+            return
+        if not await _feature_enabled(ctx, "info"):
+            await event.reply(t(ctx.owner_lang, "ub_feature_disabled"))
             return
         try:
             await _do_info(client, event, ctx)
@@ -56,6 +64,9 @@ def register(client: TelegramClient, ctx: WorkerContext) -> None:
     async def handle_me(event: events.NewMessage.Event) -> None:
         if not await _gate(event, ctx, "me"):
             return
+        if not await _feature_enabled(ctx, "me"):
+            await event.reply(t(ctx.owner_lang, "ub_feature_disabled"))
+            return
         try:
             await _do_me(client, event, ctx)
         except Exception:
@@ -64,6 +75,9 @@ def register(client: TelegramClient, ctx: WorkerContext) -> None:
     @client.on(events.NewMessage(outgoing=True, pattern=BAN_RE))
     async def handle_ban(event: events.NewMessage.Event) -> None:
         if not await _gate(event, ctx, "ban"):
+            return
+        if not await _feature_enabled(ctx, "ban"):
+            await event.reply(t(ctx.owner_lang, "ub_feature_disabled"))
             return
         try:
             await _do_ban(client, event)
@@ -75,6 +89,9 @@ def register(client: TelegramClient, ctx: WorkerContext) -> None:
     async def handle_check(event: events.NewMessage.Event) -> None:
         gate = await _gate(event, ctx, "check")
         if not gate:
+            return
+        if not await _feature_enabled(ctx, "check"):
+            await event.reply(t(ctx.owner_lang, "ub_feature_disabled"))
             return
         await _do_check(event, ctx, gate)
 

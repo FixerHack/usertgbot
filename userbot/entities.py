@@ -26,3 +26,15 @@ async def resolve(client, entity_or_id) -> tuple[str, bool]:
 async def ref(client, entity_or_id) -> str:
     ref_str, _ = await resolve(client, entity_or_id)
     return ref_str
+
+
+async def plain_name(client, entity_or_id) -> str | None:
+    """Plain (non-HTML) display name/title, for storage rather than notices —
+    e.g. the ignored-chats list needs a title, not a clickable `<a>` link."""
+    try:
+        entity = await client.get_entity(entity_or_id)
+    except Exception:
+        return None
+    name = _name(entity)
+    username = getattr(entity, "username", None)
+    return name or (f"@{username}" if username else None)

@@ -20,6 +20,7 @@ from manager_bot import handlers as action_handlers
 from manager_bot.config import settings
 from shared.i18n import lang_of, t
 from shared.logging_conf import setup_logging
+from shared.ratelimit import RateLimitMiddleware
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +40,8 @@ async def cmd_start(message: Message) -> None:
 
 def build_dispatcher() -> Dispatcher:
     dp = Dispatcher()
+    dp.message.outer_middleware(RateLimitMiddleware())
+    dp.callback_query.outer_middleware(RateLimitMiddleware())
     dp.include_router(router)
     dp.include_router(action_handlers.router)
     return dp

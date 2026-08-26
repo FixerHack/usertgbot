@@ -25,6 +25,11 @@ async def load_autoresponder(session: AsyncSession, owner_user_id: int) -> dict 
     return row.autoresponder if row else None
 
 
+async def load_features(session: AsyncSession, owner_user_id: int) -> dict | None:
+    row = await _settings(session, owner_user_id)
+    return row.features if row else None
+
+
 async def load_media(session: AsyncSession, owner_user_id: int, purpose: str) -> bytes | None:
     result = await session.execute(
         select(MediaBlob.data).where(

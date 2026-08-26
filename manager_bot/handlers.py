@@ -17,13 +17,15 @@ router = Router(name="manager_actions")
 @router.callback_query(F.data.startswith("ignore_chat:"))
 async def on_ignore_chat(callback: CallbackQuery) -> None:
     lang = lang_of(callback)
-    chat_id = int(callback.data.split(":", 1)[1])
+    _, chat_id_str, *title_parts = callback.data.split(":")
+    chat_id = int(chat_id_str)
+    chat_title = ":".join(title_parts).strip() or None
     async with get_session() as db:
         owner = await queries.get_user_by_telegram_id(db, callback.from_user.id)
         if owner is None:
             await callback.answer(t(lang, "ignore_user_error"), show_alert=True)
             return
-        await queries.add_ignored_chat(db, owner.id, chat_id)
+        await queries.add_ignored_chat(db, owner.id, chat_id, chat_title=chat_title)
         await db.commit()
 
     await callback.answer(t(lang, "ignore_added"), show_alert=True)
