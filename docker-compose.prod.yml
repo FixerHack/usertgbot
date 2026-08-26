@@ -1,0 +1,70 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: usertgbot-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: usertgbot
+      POSTGRES_PASSWORD: usertgbot
+      POSTGRES_DB: usertgbot
+    volumes:
+      - usertgbot-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U usertgbot -d usertgbot"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    # intentionally no `ports:` — only reachable from other containers on this
+    # compose network, not from the public internet.
+
+  migrate:
+    build: .
+    image: usertgbot:latest
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["uv", "run", "alembic", "upgrade", "head"]
+    restart: "no"
+
+  management-bot:
+    build: .
+    image: usertgbot:latest
+    container_name: usertgbot-management-bot
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    command: ["uv", "run", "management-bot"]
+    volumes:
+      - ./logs:/app/logs
+
+  manager-bot:
+    build: .
+    image: usertgbot:latest
+    container_name: usertgbot-manager-bot
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    command: ["uv", "run", "manager-bot"]
+    volumes:
+      - ./logs:/app/logs
+
+  userbot-worker:
+    build: .
+    image: usertgbot:latest
+    container_name: usertgbot-userbot-worker
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    command: ["uv", "run", "userbot-worker"]
+    volumes:
+      - ./logs:/app/logs
+
+volumes:
+  usertgbot-pgdata:

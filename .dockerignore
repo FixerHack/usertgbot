@@ -1,0 +1,14 @@
+.git
+.venv
+__pycache__
+*.pyc
+logs/
+backups/
+metrics/
+*.session
+.env
+.env.*
+!.env.example
+Telegram.csv
+.vscode
+.pytest_cache
