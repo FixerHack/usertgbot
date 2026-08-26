@@ -4,12 +4,34 @@ Language is chosen from the Telegram `language_code` (aiogram) / `lang_code`
 (Telethon). Strings live here as `(uk, ru, en)` tuples so every key has all
 three in one place; `t(lang, key, **kwargs)` formats one. Reply-keyboard
 buttons are matched across languages via `variants(key)`.
+
+Telegram's `language_code` reflects the client's initial/device locale and
+does not reliably follow a later in-app "Settings > Language" change, so a
+user can pick a language explicitly (stored as `User.language_code` +
+`language_locked=True`). A per-update contextvar lets a middleware publish
+that DB-resolved language once per update; every `lang_of(event)` call below
+it (handlers, keyboards, etc.) then picks it up with no call-site changes.
 """
 
 from __future__ import annotations
 
+from contextvars import ContextVar
+
 _LANG_IDX = {"uk": 0, "ru": 1, "en": 2}
 DEFAULT_LANG = "uk"
+
+_lang_override: ContextVar[str | None] = ContextVar("_lang_override", default=None)
+
+
+def set_lang_override(lang: str | None):
+    """Publish the DB-resolved language for the current update. Returns a
+    reset token — callers (middleware) must `_lang_override.reset(token)`
+    when the update is done, so contextvar state can't leak across updates."""
+    return _lang_override.set(lang)
+
+
+def reset_lang_override(token) -> None:
+    _lang_override.reset(token)
 
 
 def resolve_lang(language_code: str | None) -> str:
@@ -23,7 +45,11 @@ def resolve_lang(language_code: str | None) -> str:
 
 
 def lang_of(event) -> str:
-    """Resolve language from an aiogram Message/CallbackQuery (via from_user)."""
+    """Resolve language: the current update's DB override wins if set,
+    otherwise falls back to an aiogram Message/CallbackQuery's `from_user`."""
+    override = _lang_override.get()
+    if override is not None:
+        return override
     user = getattr(event, "from_user", None)
     return resolve_lang(getattr(user, "language_code", None) if user else None)
 
@@ -149,13 +175,62 @@ _TR: dict[str, tuple[str, str, str]] = {
         "❌ Не удалось распознать номер. Используйте кнопку ниже.",
         "❌ Couldn't read the number. Use the button below.",
     ),
+    "connect_working": (
+        "⏳ Підключаємось до Telegram, зачекайте кілька секунд…",
+        "⏳ Подключаемся к Telegram, подождите несколько секунд…",
+        "⏳ Connecting to Telegram, this can take a few seconds…",
+    ),
+    "connect_checking_code": (
+        "⏳ Перевіряємо код…",
+        "⏳ Проверяем код…",
+        "⏳ Checking the code…",
+    ),
+    "connect_checking_password": (
+        "⏳ Перевіряємо пароль…",
+        "⏳ Проверяем пароль…",
+        "⏳ Checking the password…",
+    ),
     "code_sent": (
         "💬 Код надіслано в Telegram.\nВведіть його кнопками:",
         "💬 Код отправлен в Telegram.\nВведите его кнопками:",
         "💬 A code was sent in Telegram.\nEnter it with the buttons:",
     ),
     "code_label": ("💬 Код: {masked}", "💬 Код: {masked}", "💬 Code: {masked}"),
+    "btn_resend_sms": (
+        "🔄 Код не прийшов? Спробувати ще раз",
+        "🔄 Код не пришёл? Попробовать ещё раз",
+        "🔄 Code didn't arrive? Try resending",
+    ),
+    "sms_resent": (
+        "🔄 Telegram надіслав код повторно. Канал доставки визначає сам Telegram "
+        "(це може знову бути повідомлення в самому Telegram). Введіть новий код кнопками:",
+        "🔄 Telegram отправил код повторно. Канал доставки определяет сам Telegram "
+        "(это может снова быть сообщение в самом Telegram). Введите новый код кнопками:",
+        "🔄 Telegram resent the code. It decides the delivery channel "
+        "(it may again be a Telegram in-app message). Enter the new code with the buttons:",
+    ),
+    "sms_resend_error": (
+        "❌ Не вдалося надіслати код повторно. Спробуйте ще раз пізніше.",
+        "❌ Не удалось отправить код повторно. Попробуйте ещё раз позже.",
+        "❌ Couldn't resend the code. Try again later.",
+    ),
+    "sms_no_more_options": (
+        "❌ Немає запасного каналу для цього акаунту. Код лише в чаті «Telegram» — "
+        "перевір усі свої пристрої/сесії.",
+        "❌ Нет запасного канала для этого аккаунта. Код только в чате «Telegram» — "
+        "проверь все свои устройства/сессии.",
+        "❌ No fallback channel for this account. The code only arrives in the "
+        "\"Telegram\" chat — check all your devices/sessions.",
+    ),
     "code_too_short": ("Код закороткий!", "Код слишком короткий!", "Code is too short!"),
+    "code_must_use_keyboard": (
+        "⚠️ Не вводьте код текстом — Telegram може заблокувати його через антифрод-систему. "
+        "Введіть код кнопками на клавіатурі нижче.",
+        "⚠️ Не вводите код текстом — Telegram может заблокировать его через антифрод-систему. "
+        "Введите код кнопками на клавиатуре ниже.",
+        "⚠️ Don't type the code as text — Telegram may block it via its anti-fraud system. "
+        "Enter it using the keyboard buttons below.",
+    ),
     "enter_2fa": (
         "🔐 Увімкнено 2FA. Надішліть пароль повідомленням:",
         "🔐 Включена 2FA. Отправьте пароль сообщением:",
@@ -230,6 +305,30 @@ _TR: dict[str, tuple[str, str, str]] = {
     "set_btn_me": ("🪪 Візитка (.me)", "🪪 Визитка (.me)", "🪪 Card (.me)"),
     "set_btn_ar": ("🤖 Автовідповідач (Pro)", "🤖 Автоответчик (Pro)", "🤖 Autoresponder (Pro)"),
     "set_btn_ignored": ("🚫 Ігноровані чати", "🚫 Игнорируемые чаты", "🚫 Ignored chats"),
+    "set_btn_lang": ("🌐 Мова", "🌐 Язык", "🌐 Language"),
+    "set_btn_features": ("🎛 Функції", "🎛 Функции", "🎛 Features"),
+    "features_title": (
+        "🎛 Увімкни або вимкни окремі функції userbot-а.",
+        "🎛 Включи или выключи отдельные функции юзербота.",
+        "🎛 Turn individual userbot features on or off.",
+    ),
+    "feat_deleted": ("🗑 Видалені повідомлення", "🗑 Удалённые сообщения", "🗑 Deleted messages"),
+    "feat_edited": ("✏️ Змінені повідомлення", "✏️ Изменённые сообщения", "✏️ Edited messages"),
+    "feat_info": (".info команда", ".info команда", ".info command"),
+    "feat_me": (".me — візитка", ".me — визитка", ".me — card"),
+    "feat_ban": (".ban — блок/бан", ".ban — блок/бан", ".ban — block/ban"),
+    "feat_check": (".check — перевірка", ".check — проверка", ".check — lookup"),
+    "feat_viewonce_photo": ("👁 Одноразові фото", "👁 Одноразовые фото", "👁 One-time photos"),
+    "feat_viewonce_voice": ("🎙 Одноразові голосові", "🎙 Одноразовые голосовые", "🎙 One-time voice"),
+    "lang_title": (
+        "🌐 Оберіть мову інтерфейсу.\n\n<i>Telegram не завжди коректно передає мову боту — оберіть вручну.</i>",
+        "🌐 Выберите язык интерфейса.\n\n<i>Telegram не всегда корректно передаёт язык боту — выберите вручную.</i>",
+        "🌐 Choose the interface language.\n\n<i>Telegram doesn't always report your language correctly — pick it manually.</i>",
+    ),
+    "lang_uk": ("🇺🇦 Українська", "🇺🇦 Українська", "🇺🇦 Українська"),
+    "lang_ru": ("🇷🇺 Русский", "🇷🇺 Русский", "🇷🇺 Русский"),
+    "lang_en": ("🇬🇧 English", "🇬🇧 English", "🇬🇧 English"),
+    "lang_saved": ("✅ Мову збережено.", "✅ Язык сохранён.", "✅ Language saved."),
     "set_btn_unlink": ("❌ Відв'язати акаунт", "❌ Отвязать аккаунт", "❌ Unlink account"),
     "set_btn_link": ("🔗 Прив'язати акаунт", "🔗 Привязать аккаунт", "🔗 Link account"),
     "set_me_title": ("🪪 Візитка .me:", "🪪 Визитка .me:", "🪪 .me card:"),
@@ -323,6 +422,11 @@ _TR: dict[str, tuple[str, str, str]] = {
         "❌ Ваш тариф не включает эту команду.",
         "❌ Your tariff doesn't include this command.",
     ),
+    "ub_feature_disabled": (
+        "🎛 Цю функцію вимкнено в налаштуваннях бота.",
+        "🎛 Эта функция выключена в настройках бота.",
+        "🎛 This feature is turned off in the bot settings.",
+    ),
     "ub_me_not_set": (
         "ℹ️ Візитку ще не налаштовано. Зробіть це в керуючому боті: /settings",
         "ℹ️ Визитка ещё не настроена. Сделайте это в управляющем боте: /settings",
@@ -373,6 +477,12 @@ _TR: dict[str, tuple[str, str, str]] = {
         "Помилка: користувача не знайдено.",
         "Ошибка: пользователь не найден.",
         "Error: user not found.",
+    ),
+    # blocked account
+    "account_blocked": (
+        "🚫 Ваш акаунт заблоковано адміністратором.",
+        "🚫 Ваш аккаунт заблокирован администратором.",
+        "🚫 Your account has been blocked by an administrator.",
     ),
 }
 

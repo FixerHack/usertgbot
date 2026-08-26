@@ -28,12 +28,19 @@ class User(Base):
     username: Mapped[str | None] = mapped_column(default=None)
     full_name: Mapped[str | None] = mapped_column(default=None)
     language_code: Mapped[str | None] = mapped_column(default=None)  # Telegram lang, for i18n
+    language_locked: Mapped[bool] = mapped_column(default=False)  # True once user picks a language manually
     is_blocked: Mapped[bool] = mapped_column(default=False)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
-    subscriptions: Mapped[list["Subscription"]] = relationship(back_populates="user")
-    sessions: Mapped[list["Session"]] = relationship(back_populates="user")
+    # passive_deletes=True: trust the DB's ON DELETE CASCADE (every FK to
+    # users.id is CASCADE) instead of SQLAlchemy's default behavior of
+    # trying to NULL out the child FK column itself first — which fails
+    # here since user_id/owner_user_id are NOT NULL everywhere, turning a
+    # simple `session.delete(user)` into an IntegrityError (confirmed live:
+    # the admin panel's delete-user button 500'd on exactly this).
+    subscriptions: Mapped[list["Subscription"]] = relationship(back_populates="user", passive_deletes=True)
+    sessions: Mapped[list["Session"]] = relationship(back_populates="user", passive_deletes=True)
 
 
 class SubscriptionStatus(str, enum.Enum):
@@ -122,6 +129,7 @@ class UserSettings(Base):
     )
     me_card: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
     autoresponder: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
+    features: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 

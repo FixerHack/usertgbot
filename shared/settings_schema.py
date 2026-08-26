@@ -127,6 +127,32 @@ class Autoresponder:
         )
 
 
+@dataclass
+class Features:
+    """Per-owner on/off switches for the userbot's automatic behaviors and
+    typed commands. All default to True so existing users keep today's
+    behavior unchanged."""
+
+    deleted: bool = True        # capture deleted messages
+    edited: bool = True         # capture edited messages
+    info: bool = True           # .info
+    me: bool = True             # .me
+    ban: bool = True            # .ban
+    check: bool = True          # .check
+    viewonce_photo: bool = True     # capture one-time photos
+    viewonce_voice: bool = True     # capture one-time voice messages
+
+    _FIELDS = ("deleted", "edited", "info", "me", "ban", "check", "viewonce_photo", "viewonce_voice")
+
+    def to_dict(self) -> dict:
+        return {name: getattr(self, name) for name in self._FIELDS}
+
+    @classmethod
+    def from_dict(cls, d: dict | None) -> "Features":
+        d = d or {}
+        return cls(**{name: bool(d.get(name, True)) for name in cls._FIELDS})
+
+
 def _within_window(now_t: time, start: str, end: str) -> bool:
     s_h, s_m = map(int, start.split(":"))
     e_h, e_m = map(int, end.split(":"))

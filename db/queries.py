@@ -42,13 +42,36 @@ async def get_user_by_telegram_id(session: AsyncSession, telegram_id: int) -> Us
 
 
 async def set_user_language(session: AsyncSession, telegram_id: int, language_code: str | None) -> None:
-    """Update a known user's language (no-op if they aren't in the DB yet)."""
+    """Update a known user's auto-detected language (no-op if they aren't in
+    the DB yet, or if they've locked in a manual choice via `set_user_language_manual`)."""
     if not language_code:
         return
     user = await get_user_by_telegram_id(session, telegram_id)
-    if user is not None:
+    if user is not None and not user.language_locked:
         user.language_code = language_code
         await session.flush()
+
+
+async def set_user_language_manual(session: AsyncSession, telegram_id: int, lang: str) -> None:
+    """Explicit user choice (e.g. a /settings language picker) — always wins
+    over the Telegram-reported `language_code` from then on."""
+    user = await get_user_by_telegram_id(session, telegram_id)
+    if user is not None:
+        user.language_code = lang
+        user.language_locked = True
+        await session.flush()
+
+
+async def get_effective_language(session: AsyncSession, telegram_id: int) -> str | None:
+    """The DB-resolved language for a known user, or None if they aren't known yet
+    (caller should then fall back to the live Telegram-reported language)."""
+    user = await get_user_by_telegram_id(session, telegram_id)
+    return user.language_code if user is not None else None
+
+
+async def is_user_blocked(session: AsyncSession, telegram_id: int) -> bool:
+    user = await get_user_by_telegram_id(session, telegram_id)
+    return bool(user and user.is_blocked)
 
 
 # --- sessions --------------------------------------------------------------
@@ -178,6 +201,13 @@ async def set_me_card(session: AsyncSession, user_id: int, card: dict | None) ->
 async def set_autoresponder(session: AsyncSession, user_id: int, config: dict | None) -> UserSettings:
     row = await get_or_create_settings(session, user_id)
     row.autoresponder = config
+    await session.flush()
+    return row
+
+
+async def set_features(session: AsyncSession, user_id: int, features: dict) -> UserSettings:
+    row = await get_or_create_settings(session, user_id)
+    row.features = features
     await session.flush()
     return row
 
