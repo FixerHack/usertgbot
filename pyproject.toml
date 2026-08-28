@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "aiogram>=3.30.0",
+    "aiosqlite>=0.20.0",
     "alembic>=1.19.1",
     "asyncpg>=0.31.0",
     "cryptography>=50.0.0",
@@ -31,7 +32,6 @@ db-maintenance = "db_maintenance.cli:app"
 dev = [
     "pytest>=8.3.0",
     "pytest-asyncio>=0.24.0",
-    "aiosqlite>=0.20.0",
 ]
 
 [tool.pytest.ini_options]

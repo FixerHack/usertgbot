@@ -45,30 +45,114 @@ class ManagerNotifier:
             _log_failure("text", chat_id, exc)
             return False
 
-    async def send_photo(self, chat_id: int, photo: bytes, *, caption: str = "", parse_mode: str = "HTML") -> bool:
+    async def send_photo(
+        self,
+        chat_id: int,
+        photo: bytes,
+        *,
+        caption: str = "",
+        parse_mode: str = "HTML",
+        reply_markup: InlineKeyboardMarkup | None = None,
+    ) -> bool:
         try:
             await self._bot.send_photo(
                 chat_id,
                 BufferedInputFile(photo, filename="photo.jpg"),
                 caption=caption or None,
                 parse_mode=parse_mode,
+                reply_markup=reply_markup,
             )
             return True
         except TelegramAPIError as exc:
             _log_failure("photo", chat_id, exc)
             return False
 
-    async def send_voice(self, chat_id: int, voice: bytes, *, caption: str = "", parse_mode: str = "HTML") -> bool:
+    async def send_voice(
+        self,
+        chat_id: int,
+        voice: bytes,
+        *,
+        caption: str = "",
+        parse_mode: str = "HTML",
+        reply_markup: InlineKeyboardMarkup | None = None,
+    ) -> bool:
         try:
             await self._bot.send_voice(
                 chat_id,
                 BufferedInputFile(voice, filename="voice.ogg"),
                 caption=caption or None,
                 parse_mode=parse_mode,
+                reply_markup=reply_markup,
             )
             return True
         except TelegramAPIError as exc:
             _log_failure("voice", chat_id, exc)
+            return False
+
+    async def send_video(
+        self,
+        chat_id: int,
+        video: bytes,
+        *,
+        caption: str = "",
+        parse_mode: str = "HTML",
+        reply_markup: InlineKeyboardMarkup | None = None,
+    ) -> bool:
+        try:
+            await self._bot.send_video(
+                chat_id,
+                BufferedInputFile(video, filename="video.mp4"),
+                caption=caption or None,
+                parse_mode=parse_mode,
+                reply_markup=reply_markup,
+            )
+            return True
+        except TelegramAPIError as exc:
+            _log_failure("video", chat_id, exc)
+            return False
+
+    async def send_document(
+        self,
+        chat_id: int,
+        document: bytes,
+        *,
+        filename: str = "file",
+        caption: str = "",
+        parse_mode: str = "HTML",
+        reply_markup: InlineKeyboardMarkup | None = None,
+    ) -> bool:
+        try:
+            await self._bot.send_document(
+                chat_id,
+                BufferedInputFile(document, filename=filename),
+                caption=caption or None,
+                parse_mode=parse_mode,
+                reply_markup=reply_markup,
+            )
+            return True
+        except TelegramAPIError as exc:
+            _log_failure("document", chat_id, exc)
+            return False
+
+    async def send_location(
+        self,
+        chat_id: int,
+        latitude: float,
+        longitude: float,
+        *,
+        caption: str = "",
+        parse_mode: str = "HTML",
+        reply_markup: InlineKeyboardMarkup | None = None,
+    ) -> bool:
+        try:
+            # send_location has no caption param — send it as a separate
+            # message right after, same as the location itself would read
+            await self._bot.send_location(chat_id, latitude=latitude, longitude=longitude)
+            if caption:
+                await self._bot.send_message(chat_id, caption, parse_mode=parse_mode, reply_markup=reply_markup)
+            return True
+        except TelegramAPIError as exc:
+            _log_failure("location", chat_id, exc)
             return False
 
     async def close(self) -> None:

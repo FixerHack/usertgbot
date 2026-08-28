@@ -12,6 +12,7 @@ from shared.notify import ManagerNotifier
 from userbot.config import settings
 from userbot.context import WorkerContext
 from userbot.handlers import autoresponder, autosave, commands, viewonce
+from userbot.message_cache import RecentMessageCache
 from userbot.notify import notify_owner
 
 logger = logging.getLogger(__name__)
@@ -37,6 +38,7 @@ async def run_worker(
         owner_telegram_id=owner_telegram_id,
         owner_lang=lang,
         notifier=notifier,
+        cache=RecentMessageCache(owner_user_id=owner_user_id, db_path=settings.cache_db_path),
     )
 
     commands.register(client, ctx)
@@ -59,3 +61,4 @@ async def run_worker(
     finally:
         if notifier is not None:
             await notifier.close()
+        await ctx.cache.close()

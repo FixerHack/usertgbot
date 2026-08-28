@@ -15,6 +15,8 @@ class WorkerContext:
     owner_telegram_id: int | None = None  # owner's Telegram id, for manager-bot DMs
     owner_lang: str = "uk"          # owner's language for notifications (i18n)
     notifier: ManagerNotifier | None = None
-    cache: RecentMessageCache = field(default_factory=RecentMessageCache)
+    # RecentMessageCache needs owner_user_id at construction time (SQLite rows
+    # are scoped per owner) — built explicitly in worker.py, no default here.
+    cache: RecentMessageCache = None  # type: ignore[assignment]
     # sender_id -> monotonic ts of last auto-reply, for cooldown
     autoresponder_last: dict[int, float] = field(default_factory=dict)

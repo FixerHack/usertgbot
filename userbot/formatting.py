@@ -110,9 +110,17 @@ def format_autoresponder_notice(sender_ref: str, text: str, lang: str = "uk") ->
     return f"{_t('note_ar_fired', lang)}\n{_t('note_from', lang)}: {sender_ref}\n\n{_t('note_incoming', lang)}:\n{_esc(text)}"
 
 
+def kind_label(kind: str, lang: str = "uk") -> str:
+    """`"photo"`/`"voice"`/`"video"`/`"document"`/`"location"` -> localized word, e.g. "фото"."""
+    return (
+        _t(f"kind_{kind}", lang)
+        if kind in ("photo", "voice", "video", "document", "location", "media")
+        else _t("kind_media", lang)
+    )
+
+
 def format_view_once_notice(sender_ref: str, kind: str, lang: str = "uk") -> str:
-    kind_word = _t(f"kind_{kind}", lang) if kind in ("photo", "voice", "video", "media") else _t("kind_media", lang)
-    return f"{_t('note_view_once', lang, kind=kind_word)}\n{_t('note_from', lang)}: {sender_ref}"
+    return f"{_t('note_view_once', lang, kind=kind_label(kind, lang))}\n{_t('note_from', lang)}: {sender_ref}"
 
 
 def _esc_attr(url: str) -> str:

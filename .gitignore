@@ -17,6 +17,7 @@ logs/
 backups/
 metrics/*.jsonl
 *.session
+data/
 
 # Test data dumps
 Telegram.csv
