@@ -39,17 +39,23 @@ class SettingsStates(StatesGroup):
 
 
 def _main_menu(has_account: bool, lang: str) -> InlineKeyboardMarkup:
+    account_btn = (
+        InlineKeyboardButton(text=t(lang, "set_btn_unlink"), callback_data="set:unlink")
+        if has_account
+        else InlineKeyboardButton(text=t(lang, "set_btn_link"), callback_data="set:link")
+    )
     rows = [
-        [InlineKeyboardButton(text=t(lang, "set_btn_me"), callback_data="set:me")],
-        [InlineKeyboardButton(text=t(lang, "set_btn_ar"), callback_data="set:ar")],
-        [InlineKeyboardButton(text=t(lang, "set_btn_ignored"), callback_data="set:ignored")],
-        [InlineKeyboardButton(text=t(lang, "set_btn_features"), callback_data="set:features")],
-        [InlineKeyboardButton(text=t(lang, "set_btn_lang"), callback_data="set:lang")],
+        [
+            InlineKeyboardButton(text=t(lang, "set_btn_me"), callback_data="set:me"),
+            InlineKeyboardButton(text=t(lang, "set_btn_ar"), callback_data="set:ar"),
+            InlineKeyboardButton(text=t(lang, "set_btn_ignored"), callback_data="set:ignored"),
+        ],
+        [
+            InlineKeyboardButton(text=t(lang, "set_btn_features"), callback_data="set:features"),
+            InlineKeyboardButton(text=t(lang, "set_btn_lang"), callback_data="set:lang"),
+            account_btn,
+        ],
     ]
-    if has_account:
-        rows.append([InlineKeyboardButton(text=t(lang, "set_btn_unlink"), callback_data="set:unlink")])
-    else:
-        rows.append([InlineKeyboardButton(text=t(lang, "set_btn_link"), callback_data="set:link")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 

@@ -9,14 +9,13 @@ tracks which step the chat is on.
 """
 
 import asyncio
-import html
 import logging
 
 from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from db import queries
 from db.session import get_session
@@ -294,15 +293,22 @@ async def _persist_and_finish(message: Message, state: FSMContext, result, lang:
         return
 
     await state.clear()
-    text = t(
-        lang, "connect_success",
-        name=html.escape(full_name) if full_name else "—",
-        user_id=account.user_id if account else "—",
-        phone=result.phone,
-    )
-    manager = f"@{settings.manager_bot_username}" if settings.manager_bot_username else "менеджер-бот"
-    text += t(lang, "start_manager_hint", manager=manager)
-    await _finish_reply(message, text, reply_markup=keyboards.main_menu(lang))
+    await _finish_reply(message, t(lang, "connect_success"), reply_markup=keyboards.main_menu(lang))
+
+    # A separate message with its own button — the manager bot is where all
+    # notifications actually arrive, and buried as a trailing line in the
+    # success text it was easy to miss (users went looking for where
+    # notifications were, not realizing this step was required).
+    if settings.manager_bot_username:
+        manager = f"@{settings.manager_bot_username}"
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[[InlineKeyboardButton(
+                text=t(lang, "start_manager_btn"), url=f"https://t.me/{settings.manager_bot_username}"
+            )]]
+        )
+        await message.answer(t(lang, "start_manager_hint", manager=manager), reply_markup=kb)
+    else:
+        await message.answer(t(lang, "start_manager_hint", manager="менеджер-бот"))
 
 
 async def _render_code(callback: CallbackQuery, code: str) -> None:
