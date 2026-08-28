@@ -1,4 +1,4 @@
-"""Owner-typed userbot commands: .info, .me, .ban, .check.
+"""Owner-typed userbot commands: .info, .me, .ban, .check, .send.
 
 All are `outgoing=True` — the account owner types them in any chat and the
 userbot (running as that account) acts. Every command is gated on the owner's
@@ -7,10 +7,12 @@ active subscription/tariff.
 
 from __future__ import annotations
 
+import asyncio
 import io
 import logging
+import re
 
-from telethon import TelegramClient, events
+from telethon import TelegramClient, errors, events
 from telethon.tl.functions.contacts import BlockRequest
 from telethon.tl.functions.users import GetFullUserRequest
 
@@ -39,6 +41,9 @@ INFO_RE = r"^\.info\s*$"
 ME_RE = r"^\.me\s*$"
 BAN_RE = r"^\.ban\s*$"
 CHECK_RE = r"^\.check\b.*$"
+# .send <1-100> <text> — text can span multiple lines, hence re.DOTALL
+SEND_RE = re.compile(r"^\.send\s+(\d{1,3})\s+(.+)$", re.DOTALL)
+_SEND_DELAY_SECONDS = 1.0  # spaced out so N identical sends don't trip Telegram's flood control
 
 
 async def _feature_enabled(ctx: WorkerContext, name: str) -> bool:
@@ -94,6 +99,15 @@ def register(client: TelegramClient, ctx: WorkerContext) -> None:
             await event.reply(t(ctx.owner_lang, "ub_feature_disabled"))
             return
         await _do_check(event, ctx, gate)
+
+    @client.on(events.NewMessage(outgoing=True, pattern=SEND_RE))
+    async def handle_send(event: events.NewMessage.Event) -> None:
+        if not await _gate(event, ctx, "send"):
+            return
+        try:
+            await _do_send(client, event, ctx)
+        except Exception:
+            logger.exception(".send failed")
 
 
 # --- command bodies --------------------------------------------------------
@@ -204,6 +218,26 @@ async def _do_check(event: events.NewMessage.Event, ctx: WorkerContext, gate) ->
     await event.delete()
     if not await notify_owner(ctx, note):
         await event.respond(note)
+
+
+async def _do_send(client: TelegramClient, event: events.NewMessage.Event, ctx: WorkerContext) -> None:
+    count = int(event.pattern_match.group(1))
+    text = event.pattern_match.group(2)
+    if not 1 <= count <= 100:
+        await event.reply(t(ctx.owner_lang, "ub_send_bad_count"))
+        return
+
+    chat_id = event.chat_id
+    await event.delete()
+    for i in range(count):
+        try:
+            await client.send_message(chat_id, text)
+        except errors.FloodWaitError:
+            logger.warning(".send stopped early by FloodWaitError (%s of %s sent)", i, count)
+            await client.send_message(chat_id, t(ctx.owner_lang, "ub_send_flood_stopped", sent=i, total=count))
+            return
+        if i < count - 1:
+            await asyncio.sleep(_SEND_DELAY_SECONDS)
 
 
 # --- helpers ---------------------------------------------------------------
