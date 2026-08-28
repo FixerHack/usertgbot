@@ -67,3 +67,14 @@ async def test_create_pending_and_activate(db_session):
     assert sub.started_at == NOW
     assert sub.started_at.tzinfo is None
     assert sub.expires_at > sub.started_at
+
+
+async def test_activate_uses_period_days_from_the_row(db_session):
+    # period_days is chosen at create_pending time (the duration the buyer
+    # picked) and must round-trip through activate() without being passed
+    # again explicitly — a Stars invoice payload has no room for it.
+    sub = await subscriptions.create_pending(
+        db_session, telegram_id=2, tariff=Tariff.STANDARD, provider_name="stars", period_days=90
+    )
+    await subscriptions.activate(db_session, sub, now=NOW)
+    assert (sub.expires_at - sub.started_at).days == 90

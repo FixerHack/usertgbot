@@ -125,7 +125,8 @@ _TR: dict[str, tuple[str, str, str]] = {
         "• <code>.info</code> — зводка по юзеру/чату (+ 1 аватарка)\n"
         "• <code>.me</code> — надіслати свою візитку\n"
         "• <code>.ban</code> — заблокувати й видалити (в чаті — вийти/бан)\n"
-        "• <code>.check</code> — перевірка (ліміт за тарифом)\n\n"
+        "• <code>.check</code> — перевірка (ліміт за тарифом)\n"
+        "• <code>.send N текст</code> — надіслати N копій (1-100, Pro)\n\n"
         "<b>Менеджер-бот</b> надсилає вам: видалені/змінені повідомлення, "
         "спрацювання автовідповідача, результати .info/.check, одноразові фото/гс.",
         "❓ <b>Помощь</b>\n\n"
@@ -137,7 +138,8 @@ _TR: dict[str, tuple[str, str, str]] = {
         "• <code>.info</code> — сводка по юзеру/чату (+ 1 аватарка)\n"
         "• <code>.me</code> — отправить свою визитку\n"
         "• <code>.ban</code> — заблокировать и удалить (в чате — выйти/бан)\n"
-        "• <code>.check</code> — проверка (лимит по тарифу)\n\n"
+        "• <code>.check</code> — проверка (лимит по тарифу)\n"
+        "• <code>.send N текст</code> — отправить N копий (1-100, Pro)\n\n"
         "<b>Менеджер-бот</b> присылает вам: удалённые/изменённые сообщения, "
         "срабатывания автоответчика, результаты .info/.check, одноразовые фото/гс.",
         "❓ <b>Help</b>\n\n"
@@ -149,7 +151,8 @@ _TR: dict[str, tuple[str, str, str]] = {
         "• <code>.info</code> — user/chat summary (+ 1 avatar)\n"
         "• <code>.me</code> — send your card\n"
         "• <code>.ban</code> — block & delete (in a group — leave/ban)\n"
-        "• <code>.check</code> — check (limited by tariff)\n\n"
+        "• <code>.check</code> — check (limited by tariff)\n"
+        "• <code>.send N text</code> — send N copies (1-100, Pro)\n\n"
         "<b>The manager bot</b> forwards you: deleted/edited messages, "
         "autoresponder hits, .info/.check results, one-time photos/voice.",
     ),
@@ -159,10 +162,11 @@ _TR: dict[str, tuple[str, str, str]] = {
         "🆘 <b>Support</b>\n\nContact — {contact}",
     ),
     "start_manager_hint": (
-        "\n\n❗️ Щоб отримувати сповіщення, запустіть менеджер-бота: {manager}",
-        "\n\n❗️ Чтобы получать уведомления, запустите менеджер-бота: {manager}",
-        "\n\n❗️ To receive notifications, start the manager bot: {manager}",
+        "❗️ <b>Обов'язковий останній крок</b>\n\nЗапустіть менеджер-бота {manager} — саме туди приходитимуть усі сповіщення (видалені/змінені повідомлення, автовідповідач тощо). Без цього кроку сповіщень не буде.",
+        "❗️ <b>Обязательный последний шаг</b>\n\nЗапустите менеджер-бота {manager} — именно туда будут приходить все уведомления (удалённые/изменённые сообщения, автоответчик и т.д.). Без этого шага уведомлений не будет.",
+        "❗️ <b>One last required step</b>\n\nStart the manager bot {manager} — that's where all notifications arrive (deleted/edited messages, autoresponder, etc). Without this step you won't get any.",
     ),
+    "start_manager_btn": ("🔔 Відкрити менеджер-бота", "🔔 Открыть менеджер-бота", "🔔 Open the manager bot"),
     # connect
     "connect_ask_phone": (
         "📱 Щоб підключити акаунт, надішліть свій номер телефону кнопкою нижче.",
@@ -252,17 +256,23 @@ _TR: dict[str, tuple[str, str, str]] = {
         "❌ Something went wrong while connecting. Try again.",
     ),
     "connect_success": (
-        "✅ Акаунт підключено!\n\n👤 {name}\n🆔 <code>{user_id}</code>\n📱 {phone}",
-        "✅ Аккаунт подключён!\n\n👤 {name}\n🆔 <code>{user_id}</code>\n📱 {phone}",
-        "✅ Account connected!\n\n👤 {name}\n🆔 <code>{user_id}</code>\n📱 {phone}",
+        "✅ Акаунт підключено!",
+        "✅ Аккаунт подключён!",
+        "✅ Account connected!",
     ),
     # subscribe
-    "sub_choose_method": ("Оберіть спосіб оплати:", "Выберите способ оплаты:", "Choose a payment method:"),
+    "sub_choose_duration": ("Оберіть тривалість підписки:", "Выберите длительность подписки:", "Choose a subscription duration:"),
+    "sub_duration_month": ("Місяць", "Месяц", "Month"),
+    "sub_duration_3months": ("3 місяці", "3 месяца", "3 months"),
+    "sub_duration_year": ("Рік", "Год", "Year"),
+    "sub_discount_applied": (
+        "🎁 Знижка {pct}% за реферальним посиланням застосована.",
+        "🎁 Скидка {pct}% по реферальной ссылке применена.",
+        "🎁 A {pct}% referral discount has been applied.",
+    ),
     "sub_buy": ("💳 Купити", "💳 Купить", "💳 Buy"),
     "sub_in_dev_btn": ("🚧 в розробці", "🚧 в разработке", "🚧 in development"),
     "sub_back": ("◀️ Назад", "◀️ Назад", "◀️ Back"),
-    "sub_pay_stars": ("⭐ Telegram Stars — {stars}⭐", "⭐ Telegram Stars — {stars}⭐", "⭐ Telegram Stars — {stars}⭐"),
-    "sub_pay_crypto": ("💎 Crypto — {amount} USDT", "💎 Crypto — {amount} USDT", "💎 Crypto — {amount} USDT"),
     "sub_in_dev_alert": ("Цей тариф ще в розробці 🚧", "Этот тариф ещё в разработке 🚧", "This tariff is still in development 🚧"),
     "sub_unavailable": ("Недоступно", "Недоступно", "Unavailable"),
     "sub_crypto_unavailable": ("Криптооплата недоступна", "Криптооплата недоступна", "Crypto payment is unavailable"),
@@ -288,7 +298,7 @@ _TR: dict[str, tuple[str, str, str]] = {
         "Connect your account: ⚙️ Settings → 🔗 Link account.",
     ),
     "sub_stars_title": ("Підписка {title}", "Подписка {title}", "{title} subscription"),
-    "sub_stars_desc": ("Тариф {title} на 30 днів", "Тариф {title} на 30 дней", "{title} tariff for 30 days"),
+    "sub_stars_desc": ("Тариф {title} на {days} днів", "Тариф {title} на {days} дней", "{title} tariff for {days} days"),
     # settings — profile
     "set_title": ("⚙️ <b>Налаштування</b>", "⚙️ <b>Настройки</b>", "⚙️ <b>Settings</b>"),
     "set_joined": ("📅 В боті з: {date}", "📅 В боте с: {date}", "📅 Joined: {date}"),
@@ -439,6 +449,16 @@ _TR: dict[str, tuple[str, str, str]] = {
         "❌ Лимит .check исчерпан ({used}/{quota}). Обновится в следующем месяце.",
         "❌ .check limit reached ({used}/{quota}). Resets next month.",
     ),
+    "ub_send_bad_count": (
+        "❌ Кількість має бути від 1 до 100: .send 10 текст",
+        "❌ Количество должно быть от 1 до 100: .send 10 текст",
+        "❌ Count must be between 1 and 100: .send 10 text",
+    ),
+    "ub_send_flood_stopped": (
+        "⚠️ Telegram тимчасово обмежив надсилання. Надіслано {sent}/{total}.",
+        "⚠️ Telegram временно ограничил отправку. Отправлено {sent}/{total}.",
+        "⚠️ Telegram temporarily limited sending. Sent {sent}/{total}.",
+    ),
     "ub_check_note": (
         "🔎 .check — логіка в розробці. Витрачено {used}/{quota} цього місяця.",
         "🔎 .check — логика в разработке. Потрачено {used}/{quota} в этом месяце.",
@@ -458,6 +478,8 @@ _TR: dict[str, tuple[str, str, str]] = {
     "kind_voice": ("голосове", "голосовое", "voice"),
     "kind_video": ("відео", "видео", "video"),
     "kind_media": ("медіа", "медиа", "media"),
+    "kind_document": ("файл", "файл", "file"),
+    "kind_location": ("локація", "локация", "location"),
     "btn_ignore_chat": ("🚫 Ігнорувати цей чат", "🚫 Игнорировать этот чат", "🚫 Ignore this chat"),
     "unknown": ("невідомо", "неизвестно", "unknown"),
     # manager bot
@@ -496,9 +518,9 @@ _FEATURES: dict[str, tuple[list[str], list[str], list[str]]] = {
          ".check — 5/month", "Auto-save of deleted/edited messages"],
     ),
     "pro": (
-        ["Усе зі Standard", ".check — 10/місяць", "Автовідповідач (налаштовується)"],
-        ["Всё из Standard", ".check — 10/месяц", "Автоответчик (настраивается)"],
-        ["Everything in Standard", ".check — 10/month", "Autoresponder (configurable)"],
+        ["Усе зі Standard", ".check — 10/місяць", "Автовідповідач (налаштовується)", ".send — масове надсилання (до 100 повідомлень)"],
+        ["Всё из Standard", ".check — 10/месяц", "Автоответчик (настраивается)", ".send — массовая рассылка (до 100 сообщений)"],
+        ["Everything in Standard", ".check — 10/month", "Autoresponder (configurable)", ".send — bulk send (up to 100 messages)"],
     ),
     "premium": (
         ["🚧 В розробці"],

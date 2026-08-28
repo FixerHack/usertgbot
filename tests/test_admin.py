@@ -148,6 +148,56 @@ async def test_grant_unknown_tariff(db_session):
         await service.grant_subscription(db_session, 2001, "gold")
 
 
+async def test_grant_premium_bypasses_availability_gate(db_session):
+    # Premium is `available=False` (not purchasable via /subscribe), but
+    # admin-granting it must still work — grant_subscription has no such
+    # check, unlike the regular purchase flow.
+    sub = await service.grant_subscription(db_session, 2002, "premium", days=30, now=NOW)
+    assert sub.status == SubscriptionStatus.ACTIVE
+    rows = await service.list_users(db_session, tariff="premium", now=NOW)
+    assert [r.telegram_id for r in rows] == [2002]
+
+
+async def test_list_users_shows_referral_code(db_session):
+    from shared import referrals
+
+    link = await referrals.create_link(db_session, "yt", label="YouTube", discount_percent=10)
+    user = await upsert_user(db_session, 4001)
+    await referrals.attribute_user(db_session, user, "yt")
+
+    rows = await service.list_users(db_session, now=NOW)
+    row = next(r for r in rows if r.telegram_id == 4001)
+    assert row.referral_code == "yt"
+
+
+async def test_create_referral_link_validation(db_session):
+    import pytest
+
+    await service.create_referral_link(db_session, "promo1", label="Promo", discount_percent=10)
+    with pytest.raises(ValueError):
+        await service.create_referral_link(db_session, "promo1")  # duplicate code
+    with pytest.raises(ValueError):
+        await service.create_referral_link(db_session, "bad code!")  # not alnum
+    with pytest.raises(ValueError):
+        await service.create_referral_link(db_session, "промо")  # non-ASCII — Telegram's /start payload can't carry it
+    with pytest.raises(ValueError):
+        await service.create_referral_link(db_session, "promo2", discount_percent=101)
+
+
+async def test_update_referral_discount(db_session):
+    import pytest
+
+    await service.create_referral_link(db_session, "promo3", discount_percent=10)
+    await service.update_referral_discount(db_session, "promo3", 40)
+    stats = {s.code: s for s in await service.list_referral_links(db_session)}
+    assert stats["promo3"].discount_percent == 40
+
+    with pytest.raises(ValueError):
+        await service.update_referral_discount(db_session, "promo3", 101)  # out of range
+    with pytest.raises(ValueError):
+        await service.update_referral_discount(db_session, "does-not-exist", 10)
+
+
 async def test_api_endpoints(db_session):
     from httpx import ASGITransport, AsyncClient
 
@@ -174,6 +224,49 @@ async def test_api_endpoints(db_session):
         std = (await ac.get("/api/users?tariff=standard", headers={"X-Token": "secret"})).json()
         assert [u["telegram_id"] for u in std] == [1002]
 
+        # grant Premium via API (bypasses the not-purchasable gate, same as +Std/+Pro)
+        # — a fresh telegram_id, since 1001 already has an active "pro" sub and
+        # _active_sub()'s tie-break on equal created_at timestamps isn't the point here
+        gp = await ac.post("/api/users/1003/grant?tariff=premium&days=30", headers={"X-Token": "secret"})
+        assert gp.status_code == 200
+        premium = (await ac.get("/api/users?tariff=premium", headers={"X-Token": "secret"})).json()
+        assert [u["telegram_id"] for u in premium] == [1003]
+
+        # referral links: create + list
+        assert (await ac.get("/api/referrals")).status_code == 401  # no token
+        rc = await ac.post(
+            "/api/referrals?code=promo&label=Promo&discount_percent=10", headers={"X-Token": "secret"}
+        )
+        assert rc.status_code == 200
+        dup = await ac.post("/api/referrals?code=promo", headers={"X-Token": "secret"})
+        assert dup.status_code == 400
+        links = (await ac.get("/api/referrals", headers={"X-Token": "secret"})).json()
+        assert [l["code"] for l in links] == ["promo"]
+        assert links[0]["discount_percent"] == 10
+
+        ud = await ac.post("/api/referrals/promo/discount?discount_percent=20", headers={"X-Token": "secret"})
+        assert ud.status_code == 200
+        links = (await ac.get("/api/referrals", headers={"X-Token": "secret"})).json()
+        assert links[0]["discount_percent"] == 20
+
+        bad = await ac.post("/api/referrals/does-not-exist/discount?discount_percent=20", headers={"X-Token": "secret"})
+        assert bad.status_code == 400
+
         # index page served without token
         index = await ac.get("/")
         assert index.status_code == 200 and "Admin" in index.text
+
+
+async def test_admin_page_embeds_bot_username(db_session):
+    from httpx import ASGITransport, AsyncClient
+
+    from admin_web.app import create_app
+
+    async def _db():
+        yield db_session
+
+    app = create_app("secret", db_dependency=_db, bot_username="my_test_bot")
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://t") as ac:
+        index = await ac.get("/")
+        assert "my_test_bot" in index.text

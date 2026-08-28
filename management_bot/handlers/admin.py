@@ -23,8 +23,9 @@ async def cmd_admin(message: Message) -> None:
         return  # silent for non-admins
     await message.answer("🚀 Запускаю адмін-панель…")
     try:
+        me = await message.bot.get_me()
         url, token = await admin_server.start(
-            port=settings.admin_panel_port, ngrok_authtoken=settings.ngrok_authtoken
+            port=settings.admin_panel_port, ngrok_authtoken=settings.ngrok_authtoken, bot_username=me.username
         )
     except Exception:
         logger.exception("failed to start admin panel")

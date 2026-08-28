@@ -6,13 +6,16 @@ session and commit.
 
 from __future__ import annotations
 
+import re
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from db.models import CheckUsage, SavedMessage, Session, Subscription, SubscriptionStatus, User
+from db.models import CheckUsage, ReferralLink, SavedMessage, Session, Subscription, SubscriptionStatus, User
+from shared import referrals
+from shared.referrals import ReferralLinkStats
 from shared.tariffs import PLANS, Tariff
 
 
@@ -145,6 +148,7 @@ class UserRow:
     sub_status: str | None
     expires_at: str | None
     connected: bool
+    referral_code: str | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -163,6 +167,7 @@ async def list_users(
 ) -> list[UserRow]:
     now = _naive_utc(now)
     users = (await session.execute(select(User).order_by(User.created_at.desc()))).scalars().all()
+    link_codes = dict((await session.execute(select(ReferralLink.id, ReferralLink.code))).all())
 
     rows: list[UserRow] = []
     for user in users:
@@ -197,6 +202,7 @@ async def list_users(
                 sub_status=(active.status.value if active else None),
                 expires_at=active.expires_at.date().isoformat() if active and active.expires_at else None,
                 connected=has_account,
+                referral_code=link_codes.get(user.referred_by_link_id),
             )
         )
         if len(rows) >= limit:
@@ -290,3 +296,37 @@ async def _get_or_create(session: AsyncSession, telegram_id: int) -> User:
         session.add(user)
         await session.flush()
     return user
+
+
+# --- referral links ----------------------------------------------------
+
+
+_REFERRAL_CODE_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+
+
+async def create_referral_link(
+    session: AsyncSession, code: str, *, label: str | None = None, discount_percent: int = 0
+) -> ReferralLink:
+    # Telegram's own /start deep-link payload is restricted to this exact
+    # charset (max 64 chars) — a code outside it would produce a ref_<code>
+    # link Telegram itself won't accept, so reject it up front rather than
+    # `str.isalnum()` (Unicode-aware — would wrongly allow e.g. Cyrillic).
+    if not _REFERRAL_CODE_RE.match(code):
+        raise ValueError("code must be ASCII letters/digits/_/- , 1-64 chars")
+    if not 0 <= discount_percent <= 100:
+        raise ValueError("discount_percent must be between 0 and 100")
+    existing = await referrals.get_link_by_code(session, code)
+    if existing is not None:
+        raise ValueError(f"referral code {code!r} already exists")
+    return await referrals.create_link(session, code, label=label, discount_percent=discount_percent)
+
+
+async def list_referral_links(session: AsyncSession) -> list[ReferralLinkStats]:
+    return await referrals.list_links_with_stats(session)
+
+
+async def update_referral_discount(session: AsyncSession, code: str, discount_percent: int) -> None:
+    if not 0 <= discount_percent <= 100:
+        raise ValueError("discount_percent must be between 0 and 100")
+    if not await referrals.update_discount(session, code, discount_percent):
+        raise ValueError(f"referral code {code!r} not found")

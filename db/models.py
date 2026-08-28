@@ -33,6 +33,14 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
+    # Which referral link (if any) first brought this user in — set once on
+    # their first /start with a `ref_<code>` payload, never overwritten
+    # afterward. SET NULL (not CASCADE): deleting a referral link shouldn't
+    # take users down with it, just drop the attribution.
+    referred_by_link_id: Mapped[int | None] = mapped_column(
+        ForeignKey("referral_links.id", ondelete="SET NULL"), default=None
+    )
+
     # passive_deletes=True: trust the DB's ON DELETE CASCADE (every FK to
     # users.id is CASCADE) instead of SQLAlchemy's default behavior of
     # trying to NULL out the child FK column itself first — which fails
@@ -41,6 +49,7 @@ class User(Base):
     # the admin panel's delete-user button 500'd on exactly this).
     subscriptions: Mapped[list["Subscription"]] = relationship(back_populates="user", passive_deletes=True)
     sessions: Mapped[list["Session"]] = relationship(back_populates="user", passive_deletes=True)
+    referred_by: Mapped["ReferralLink | None"] = relationship()
 
 
 class SubscriptionStatus(str, enum.Enum):
@@ -61,12 +70,31 @@ class Subscription(Base):
     status: Mapped[SubscriptionStatus] = mapped_column(default=SubscriptionStatus.PENDING)
     payment_provider: Mapped[str] = mapped_column()
     external_invoice_id: Mapped[str | None] = mapped_column(default=None)
+    # How many days this period covers once activated. Set at creation time
+    # (from the duration the user picked) and read back by `activate()` —
+    # a Stars invoice payload can't carry it, so it has to live on the row.
+    period_days: Mapped[int] = mapped_column(default=30, server_default="30")
     started_at: Mapped[datetime | None] = mapped_column(default=None)
     expires_at: Mapped[datetime | None] = mapped_column(default=None)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
     user: Mapped["User"] = relationship(back_populates="subscriptions")
+
+
+class ReferralLink(Base):
+    """An admin-issued tracking link (`/start ref_<code>`). Attributes a new
+    user to a source and can carry a discount applied at purchase time — but
+    never grants a subscription on its own, only tracking + an optional
+    price break."""
+
+    __tablename__ = "referral_links"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(unique=True, index=True)
+    label: Mapped[str | None] = mapped_column(default=None)
+    discount_percent: Mapped[int] = mapped_column(default=0)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
 class ReputationRecord(Base):

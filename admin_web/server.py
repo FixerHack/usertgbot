@@ -35,12 +35,12 @@ class AdminServer:
     def is_running(self) -> bool:
         return self._task is not None and not self._task.done()
 
-    async def start(self, *, port: int, ngrok_authtoken: str | None = None) -> tuple[str, str]:
+    async def start(self, *, port: int, ngrok_authtoken: str | None = None, bot_username: str | None = None) -> tuple[str, str]:
         if self.is_running() and self.url:
             return self.url, self.token or ""
 
         self.token = secrets.token_urlsafe(16)
-        app = create_app(self.token)
+        app = create_app(self.token, bot_username=bot_username)
         config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
         self._server = uvicorn.Server(config)
         self._server.install_signal_handlers = lambda: None  # not the main thread's job here

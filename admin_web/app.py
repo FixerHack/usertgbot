@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import secrets
 from collections.abc import AsyncIterator
+from dataclasses import asdict
 from datetime import date
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
@@ -25,8 +26,9 @@ async def _default_db() -> AsyncIterator[AsyncSession]:
         yield session
 
 
-def create_app(token: str, *, db_dependency=_default_db) -> FastAPI:
+def create_app(token: str, *, db_dependency=_default_db, bot_username: str | None = None) -> FastAPI:
     app = FastAPI(title="usertgbot admin", docs_url=None, redoc_url=None)
+    page = PAGE.replace("__BOT_USERNAME__", bot_username or "")
 
     def require_token(x_token: str | None = Header(default=None), token_q: str | None = Query(default=None, alias="token")) -> None:
         provided = x_token or token_q or ""
@@ -36,7 +38,7 @@ def create_app(token: str, *, db_dependency=_default_db) -> FastAPI:
 
     @app.get("/", response_class=HTMLResponse)
     async def index() -> str:
-        return PAGE
+        return page
 
     @app.get("/api/metrics", dependencies=[Depends(require_token)])
     async def metrics(db: AsyncSession = Depends(db_dependency)) -> dict:
@@ -93,5 +95,32 @@ def create_app(token: str, *, db_dependency=_default_db) -> FastAPI:
         ok = await service.delete_user(db, telegram_id)
         await db.commit()
         return {"ok": ok}
+
+    @app.get("/api/referrals", dependencies=[Depends(require_token)])
+    async def referrals_list(db: AsyncSession = Depends(db_dependency)) -> list[dict]:
+        stats = await service.list_referral_links(db)
+        return [asdict(s) for s in stats]
+
+    @app.post("/api/referrals", dependencies=[Depends(require_token)])
+    async def referrals_create(
+        code: str, label: str | None = None, discount_percent: int = 0, db: AsyncSession = Depends(db_dependency)
+    ) -> dict:
+        try:
+            await service.create_referral_link(db, code, label=label, discount_percent=discount_percent)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        await db.commit()
+        return {"ok": True}
+
+    @app.post("/api/referrals/{code}/discount", dependencies=[Depends(require_token)])
+    async def referrals_update_discount(
+        code: str, discount_percent: int, db: AsyncSession = Depends(db_dependency)
+    ) -> dict:
+        try:
+            await service.update_referral_discount(db, code, discount_percent)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        await db.commit()
+        return {"ok": True}
 
     return app

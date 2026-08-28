@@ -1,6 +1,8 @@
 """/subscribe: a tariff carousel + payment (Telegram Stars or Crypto Pay).
 
-Flow: browse tariffs (◀️/▶️) → «Купити» → choose method → pay.
+Flow: browse tariffs (◀️/▶️) → «Купити» → a duration×price grid (Місяць/3
+місяці/Рік columns, ⭐/$ rows) → tapping a ⭐ or $ cell fires the invoice for
+that duration on that channel directly, no separate method-choice step.
 • Stars: send_invoice(XTR); pre_checkout answered ok; successful_payment activates.
 • Crypto: Crypto Pay invoice + a «Перевірити оплату» button that polls status.
 The tariff is held as a PENDING subscription until payment is confirmed.
@@ -8,6 +10,8 @@ The tariff is held as a PENDING subscription until payment is confirmed.
 Prices are computed live (shared.pricing.compute_prices) from each plan's
 fixed profit_uah target, grossed up per channel so profit never drops below
 that target regardless of the live exchange rate or that channel's fee.
+Duration multiplies profit_uah before grossing up (shared.tariffs.DURATIONS);
+a referral discount (shared.referrals), if any, multiplies it down further.
 """
 
 import logging
@@ -29,9 +33,10 @@ from db.session import get_session
 from management_bot import keyboards, subscriptions
 from management_bot.config import settings
 from management_bot.payment.crypto_pay import CryptoPayProvider
+from shared import referrals
 from shared.i18n import features, lang_of, t
-from shared.pricing import PriceBreakdown, compute_prices
-from shared.tariffs import PLANS, Tariff, get_plan
+from shared.pricing import PriceBreakdown, compute_prices, get_usd_uah_rate
+from shared.tariffs import DURATIONS, PLANS, Duration, Tariff, discount_pct, effective_profit_uah, get_duration, get_plan
 
 logger = logging.getLogger(__name__)
 router = Router(name="subscribe")
@@ -66,7 +71,7 @@ def _crypto() -> CryptoPayProvider | None:
 def _card_text(plan, prices: PriceBreakdown | None, lang: str) -> str:
     lines = [f"💳 <b>{plan.title}</b>"]
     if plan.available and prices is not None:
-        lines.append(f"{prices.usdt_invoice} USDT  ·  {prices.stars}⭐")
+        lines.append(f"{prices.profit_uah}₴  ·  ${prices.usd_net}  ·  {prices.stars}⭐")
     lines.append("")
     lines.extend(f"• {f}" for f in features(lang, plan.id))
     return "\n".join(lines)
@@ -92,12 +97,57 @@ def _carousel_kb(idx: int, lang: str) -> InlineKeyboardMarkup:
     )
 
 
-def _methods_kb(tariff_id: str, idx: int, prices: PriceBreakdown, lang: str) -> InlineKeyboardMarkup:
-    rows = [[InlineKeyboardButton(text=t(lang, "sub_pay_stars", stars=prices.stars), callback_data=f"sub:pay:{tariff_id}:stars")]]
-    if _crypto() is not None:
-        rows.append([InlineKeyboardButton(text=t(lang, "sub_pay_crypto", amount=prices.usdt_invoice), callback_data=f"sub:pay:{tariff_id}:crypto")])
-    rows.append([InlineKeyboardButton(text=t(lang, "sub_back"), callback_data=f"sub:nav:{idx}")])
-    return InlineKeyboardMarkup(inline_keyboard=rows)
+_DURATION_LABEL_KEYS = {
+    Duration.MONTH: "sub_duration_month",
+    Duration.QUARTER: "sub_duration_3months",
+    Duration.YEAR: "sub_duration_year",
+}
+
+
+async def _duration_prices(plan, discount: int) -> dict[Duration, PriceBreakdown]:
+    """Price breakdown for every duration option, with `discount` (%, from a
+    referral link) applied on top of the period's own multiplier."""
+    rate = await get_usd_uah_rate()
+    out: dict[Duration, PriceBreakdown] = {}
+    for code, opt in DURATIONS.items():
+        effective = effective_profit_uah(plan.profit_uah, opt, discount)
+        out[code] = await compute_prices(effective, usd_uah_rate=rate)
+    return out
+
+
+def _duration_kb(tariff_id: str, idx: int, lang: str, prices: dict[Duration, PriceBreakdown]) -> InlineKeyboardMarkup:
+    """A 4x3 grid: one column per duration. The label and ₴ rows are inert
+    (₴ isn't an actual payment channel, just a reference figure) — only the
+    ⭐ and $ rows are real, tapping either fires the invoice for that
+    duration on that channel directly (no separate method-choice step)."""
+    codes = list(DURATIONS.items())
+
+    label_row = []
+    for code, opt in codes:
+        label = t(lang, _DURATION_LABEL_KEYS[code])
+        pct = discount_pct(opt)
+        text = f"{label} −{pct}%" if pct > 0 else label
+        label_row.append(InlineKeyboardButton(text=text, callback_data="sub:noop"))
+
+    stars_row = [
+        InlineKeyboardButton(text=f"{prices[code].stars}⭐", callback_data=f"sub:pay:{tariff_id}:{code.value}:stars")
+        for code, _ in codes
+    ]
+    usd_row = [
+        InlineKeyboardButton(text=f"${prices[code].usd_net}", callback_data=f"sub:pay:{tariff_id}:{code.value}:crypto")
+        for code, _ in codes
+    ]
+    uah_row = [InlineKeyboardButton(text=f"{round(prices[code].profit_uah)}₴", callback_data="sub:noop") for code, _ in codes]
+
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            label_row,
+            stars_row,
+            usd_row,
+            uah_row,
+            [InlineKeyboardButton(text=t(lang, "sub_back"), callback_data=f"sub:nav:{idx}")],
+        ]
+    )
 
 
 async def _edit(message: Message, text: str, *, kb: InlineKeyboardMarkup | None = None) -> None:
@@ -136,6 +186,12 @@ async def on_nop(callback: CallbackQuery) -> None:
     await callback.answer(t(lang_of(callback), "sub_in_dev_alert"), show_alert=True)
 
 
+@router.callback_query(F.data == "sub:noop")
+async def on_noop(callback: CallbackQuery) -> None:
+    """The duration-grid's label/₴ rows — visual only, no action."""
+    await callback.answer()
+
+
 @router.callback_query(F.data.startswith("sub:nav:"))
 async def on_nav(callback: CallbackQuery) -> None:
     idx = int(callback.data.rsplit(":", 1)[1]) % len(TARIFF_ORDER)
@@ -153,11 +209,16 @@ async def on_buy(callback: CallbackQuery) -> None:
         await callback.answer(t(lang, "sub_unavailable"), show_alert=True)
         return
     idx = TARIFF_ORDER.index(Tariff(tariff_id))
-    prices = await compute_prices(plan.profit_uah)
+    async with get_session() as db:
+        discount = await referrals.get_discount_percent(db, callback.from_user.id)
+    prices = await _duration_prices(plan, discount)
+    text = f"{_card_text(plan, None, lang)}\n\n{t(lang, 'sub_choose_duration')}"
+    if discount:
+        text += f"\n{t(lang, 'sub_discount_applied', pct=discount)}"
     await _send_card(
         callback.message, idx, lang,
-        text=f"{_card_text(plan, prices, lang)}\n\n{t(lang, 'sub_choose_method')}",
-        kb=_methods_kb(tariff_id, idx, prices, lang),
+        text=text,
+        kb=_duration_kb(tariff_id, idx, lang, prices),
     )
     await callback.message.delete()
     await callback.answer()
@@ -166,23 +227,57 @@ async def on_buy(callback: CallbackQuery) -> None:
 # --- Telegram Stars --------------------------------------------------------
 
 
-@router.callback_query(F.data.startswith("sub:pay:") & F.data.endswith(":stars"))
-async def on_pay_stars(callback: CallbackQuery) -> None:
-    lang = lang_of(callback)
-    tariff_id = callback.data.split(":")[2]
-    plan = get_plan(tariff_id)
-    prices = await compute_prices(plan.profit_uah)
+async def _grant_free(callback: CallbackQuery, lang: str, plan, tariff_id: str, opt) -> None:
+    """A 100% referral discount brings the price to 0 — no payment gateway
+    accepts a zero-amount invoice (Crypto Pay outright rejects it), so a
+    fully-discounted purchase activates the subscription directly instead."""
     user = callback.from_user
     async with get_session() as db:
         sub = await subscriptions.create_pending(
+            db, telegram_id=user.id, tariff=Tariff(tariff_id), provider_name="referral_free",
+            username=user.username, full_name=user.full_name, period_days=opt.days,
+        )
+        await subscriptions.activate(db, sub)
+        await db.commit()
+    await callback.message.answer(
+        t(lang, "sub_success", title=plan.title) + "\n" + t(lang, "sub_connect_hint"),
+        reply_markup=keyboards.main_menu(lang),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("sub:pay:") & F.data.endswith(":stars"))
+async def on_pay_stars(callback: CallbackQuery) -> None:
+    lang = lang_of(callback)
+    _, _, tariff_id, dur_code, _ = callback.data.split(":")
+    plan = get_plan(tariff_id)
+    if not plan.available:
+        # callback_data isn't trusted input — a crafted callback_query (e.g.
+        # via a raw MTProto call, trivial with Telethon) could name any
+        # tariff id directly, skipping on_buy's own availability check.
+        # Premium's profit_uah=0 would otherwise sail straight through the
+        # free-grant path below and hand out a real subscription for free.
+        await callback.answer(t(lang, "sub_unavailable"), show_alert=True)
+        return
+    opt = get_duration(dur_code)
+    user = callback.from_user
+    async with get_session() as db:
+        discount = await referrals.get_discount_percent(db, user.id)
+    effective = effective_profit_uah(plan.profit_uah, opt, discount)
+    if effective <= 0:
+        await _grant_free(callback, lang, plan, tariff_id, opt)
+        return
+    async with get_session() as db:
+        prices = await compute_prices(effective)
+        sub = await subscriptions.create_pending(
             db, telegram_id=user.id, tariff=Tariff(tariff_id), provider_name="stars",
-            username=user.username, full_name=user.full_name,
+            username=user.username, full_name=user.full_name, period_days=opt.days,
         )
         await db.commit()
         sub_id = sub.id
     await callback.message.answer_invoice(
         title=t(lang, "sub_stars_title", title=plan.title),
-        description=t(lang, "sub_stars_desc", title=plan.title),
+        description=t(lang, "sub_stars_desc", title=plan.title, days=opt.days),
         payload=f"sub:{sub_id}",
         provider_token="",  # empty for Telegram Stars (XTR)
         currency="XTR",
@@ -222,18 +317,30 @@ async def on_successful_payment(message: Message) -> None:
 @router.callback_query(F.data.startswith("sub:pay:") & F.data.endswith(":crypto"))
 async def on_pay_crypto(callback: CallbackQuery) -> None:
     lang = lang_of(callback)
+    _, _, tariff_id, dur_code, _ = callback.data.split(":")
+    plan = get_plan(tariff_id)
+    if not plan.available:
+        # see on_pay_stars — callback_data can be forged directly, bypassing
+        # on_buy's availability gate.
+        await callback.answer(t(lang, "sub_unavailable"), show_alert=True)
+        return
+    opt = get_duration(dur_code)
+    user = callback.from_user
+    async with get_session() as db:
+        discount = await referrals.get_discount_percent(db, user.id)
+    effective = effective_profit_uah(plan.profit_uah, opt, discount)
+    if effective <= 0:
+        await _grant_free(callback, lang, plan, tariff_id, opt)
+        return
     provider = _crypto()
     if provider is None:
         await callback.answer(t(lang, "sub_crypto_unavailable"), show_alert=True)
         return
-    tariff_id = callback.data.split(":")[2]
-    plan = get_plan(tariff_id)
-    prices = await compute_prices(plan.profit_uah)
-    user = callback.from_user
     async with get_session() as db:
+        prices = await compute_prices(effective)
         sub = await subscriptions.create_pending(
             db, telegram_id=user.id, tariff=Tariff(tariff_id), provider_name="crypto_pay",
-            username=user.username, full_name=user.full_name,
+            username=user.username, full_name=user.full_name, period_days=opt.days,
         )
         await db.commit()
         sub_id = sub.id

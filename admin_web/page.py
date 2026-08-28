@@ -66,6 +66,7 @@ PAGE = """<!doctype html>
   <div class="tabs">
     <div class="tab active" data-tab="metrics">📊 Метрики</div>
     <div class="tab" data-tab="users">👥 Юзери</div>
+    <div class="tab" data-tab="referrals">🔗 Реферали</div>
   </div>
 </header>
 <main>
@@ -80,9 +81,19 @@ PAGE = """<!doctype html>
     </div>
     <div id="user-cards" class="cards"></div>
   </section>
+  <section id="referrals" class="hidden">
+    <div class="filters">
+      <input id="r-code" placeholder="код (напр. youtube)">
+      <input id="r-label" placeholder="назва (опційно)">
+      <input id="r-discount" type="number" min="0" max="100" value="0" title="знижка %" style="width:90px">
+      <button class="pri" onclick="createReferral()">Створити посилання</button>
+    </div>
+    <div id="referral-list"></div>
+  </section>
 </main>
 <script>
 const TOKEN = new URLSearchParams(location.search).get('token') || '';
+const BOT_USERNAME = "__BOT_USERNAME__";
 const H = {'X-Token': TOKEN};
 async function api(path, opts={}){ opts.headers = Object.assign({}, H, opts.headers||{}); const r = await fetch(path, opts); if(!r.ok) throw new Error(r.status); return r.headers.get('content-type','').includes('json')?r.json():r.text(); }
 
@@ -92,7 +103,8 @@ document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
   const tab=t.dataset.tab;
   document.getElementById('metrics').classList.toggle('hidden', tab!=='metrics');
   document.getElementById('users').classList.toggle('hidden', tab!=='users');
-  if(tab==='users') loadUsers(); else loadMetrics();
+  document.getElementById('referrals').classList.toggle('hidden', tab!=='referrals');
+  if(tab==='users') loadUsers(); else if(tab==='referrals') loadReferrals(); else loadMetrics();
 });
 
 function stat(n,l){return `<div class="stat"><div class="n">${n}</div><div class="l">${l}</div></div>`}
@@ -167,15 +179,17 @@ function ucard(u){
   const sub = u.tariff ? `<span class="badge pro">${esc(u.tariff)}${u.expires_at?(' до '+esc(u.expires_at)):''}</span>` : '<span class="badge">без підписки</span>';
   const conn = u.connected ? '<span class="badge ok">акаунт ✓</span>' : '<span class="badge">акаунт ✗</span>';
   const blk = u.is_blocked ? '<span class="badge bad">бан</span>' : '';
+  const ref = u.referral_code ? `<span class="badge">🔗 ${esc(u.referral_code)}</span>` : '';
   const name = esc(u.full_name||u.username||u.telegram_id);
   const uname = u.username?('@'+esc(u.username)+' · '):'';
   return `<div class="u">
     <div class="top"><div><div class="name">${name}</div><div class="id">${uname}${Number(u.telegram_id)}</div></div><div>${blk}</div></div>
     <div class="meta">Приєднався: ${esc(u.joined||'—')}</div>
-    <div>${sub} ${conn}</div>
+    <div>${sub} ${conn} ${ref}</div>
     <div class="acts">
       <button onclick="grant(${u.telegram_id},'standard')">+Std</button>
       <button onclick="grant(${u.telegram_id},'pro')">+Pro</button>
+      <button onclick="grant(${u.telegram_id},'premium')">+Premium</button>
       <button onclick="act(${u.telegram_id},'revoke')">−Підписку</button>
       ${u.is_blocked?`<button onclick="act(${u.telegram_id},'unblock')">Розбан</button>`:`<button onclick="act(${u.telegram_id},'block')">Бан</button>`}
       <button class="danger" onclick="delUser(${Number(u.telegram_id)})">🗑 Видалити</button>
@@ -201,6 +215,61 @@ async function delUser(id){
     await api(`/api/users/${id}/delete`,{method:'POST'});
     loadUsers();
   }catch(e){ alert('Не вдалося видалити: '+e.message); }
+}
+
+function rcard(r){
+  const tariffs = Object.keys(r.by_tariff||{}).length
+    ? Object.entries(r.by_tariff).map(([t,n])=>`${esc(t)}: ${n}`).join(', ')
+    : '—';
+  const link = BOT_USERNAME ? `https://t.me/${BOT_USERNAME}?start=ref_${encodeURIComponent(r.code)}` : `?start=ref_${encodeURIComponent(r.code)}`;
+  const cid = 'r-' + esc(r.code).replace(/[^a-zA-Z0-9_-]/g,'_');
+  return `<div class="u">
+    <div class="top"><div><div class="name">${esc(r.code)}</div><div class="id">${esc(r.label||'')}</div></div></div>
+    <div class="meta">Переходів: ${r.clicks} · Куплено: ${tariffs}</div>
+    <div class="meta" style="display:flex;gap:6px;align-items:center">
+      <code id="${cid}-link" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">${esc(link)}</code>
+      <button onclick="copyReferralLink('${cid}-link')">📋</button>
+    </div>
+    <div class="acts">
+      <span class="muted">Знижка:</span>
+      <input id="${cid}-disc" type="number" min="0" max="100" value="${r.discount_percent}" style="width:70px">
+      <button onclick="updateDiscount('${esc(r.code)}','${cid}-disc')">Зберегти</button>
+    </div>
+  </div>`;
+}
+function copyReferralLink(id){
+  const text = document.getElementById(id).textContent;
+  navigator.clipboard?.writeText(text).catch(()=>{});
+}
+async function updateDiscount(code, inputId){
+  const value = document.getElementById(inputId).value || 0;
+  try{
+    await api(`/api/referrals/${encodeURIComponent(code)}/discount?discount_percent=${value}`,{method:'POST'});
+    loadReferrals();
+  }catch(e){ alert('Не вдалося оновити знижку: '+e.message); }
+}
+async function loadReferrals(){
+  try{
+    const rows = await api('/api/referrals');
+    document.getElementById('referral-list').innerHTML = rows.length
+      ? '<div class="cards">'+rows.map(rcard).join('')+'</div>'
+      : '<p class="muted">Ще немає реферальних посилань.</p>';
+  }catch(e){ document.getElementById('referral-list').innerHTML='<p class="muted">Помилка доступу.</p>'; }
+}
+async function createReferral(){
+  const code = document.getElementById('r-code').value.trim();
+  const label = document.getElementById('r-label').value.trim();
+  const discount = document.getElementById('r-discount').value || 0;
+  if(!code){ alert('Вкажіть код посилання'); return; }
+  const q = new URLSearchParams({code, discount_percent: discount});
+  if(label) q.set('label', label);
+  try{
+    await api(`/api/referrals?${q.toString()}`,{method:'POST'});
+    document.getElementById('r-code').value='';
+    document.getElementById('r-label').value='';
+    document.getElementById('r-discount').value='0';
+    loadReferrals();
+  }catch(e){ alert('Не вдалося створити: '+e.message); }
 }
 
 loadMetrics();

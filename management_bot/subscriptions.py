@@ -34,6 +34,7 @@ async def create_pending(
     external_invoice_id: str | None = None,
     username: str | None = None,
     full_name: str | None = None,
+    period_days: int = DEFAULT_PERIOD_DAYS,
 ) -> Subscription:
     """A PENDING subscription awaiting payment confirmation (Stars/crypto)."""
     user = await upsert_user(session, telegram_id, username=username, full_name=full_name)
@@ -43,6 +44,7 @@ async def create_pending(
         status=SubscriptionStatus.PENDING,
         payment_provider=provider_name,
         external_invoice_id=external_invoice_id,
+        period_days=period_days,
     )
     session.add(sub)
     await session.flush()
@@ -54,12 +56,17 @@ async def get_subscription(session: AsyncSession, sub_id: int) -> Subscription |
 
 
 async def activate(
-    session: AsyncSession, sub: Subscription, *, now: datetime | None = None, period_days: int = DEFAULT_PERIOD_DAYS
+    session: AsyncSession, sub: Subscription, *, now: datetime | None = None, period_days: int | None = None
 ) -> Subscription:
+    """`period_days` defaults to whatever was set on the row at
+    `create_pending` time (the duration the buyer actually picked) — a
+    Stars invoice payload can't carry it, so it has to round-trip via the
+    row itself. Pass it explicitly only to override that."""
     now = _naive_utc(now)
+    days = period_days if period_days is not None else (sub.period_days or DEFAULT_PERIOD_DAYS)
     sub.status = SubscriptionStatus.ACTIVE
     sub.started_at = now
-    sub.expires_at = now + timedelta(days=period_days)
+    sub.expires_at = now + timedelta(days=days)
     await session.flush()
     return sub
 
