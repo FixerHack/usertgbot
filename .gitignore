@@ -26,4 +26,5 @@ Telegram.csv
 # shipped product (each has its own README explaining what it's for)
 test_mono/
 test_login/
+test_webapp/
 files.zip
