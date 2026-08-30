@@ -11,6 +11,10 @@ class UserbotSettings(BaseSettings):
     encryption_key: str
     # optional: when set, workers push notifications to owners via this bot
     manager_bot_token: str | None = None
+    # Username of the MANAGEMENT bot (no @). Only used to build a "re-link
+    # your account" deep link on the session-expired notice, so the owner can
+    # fix it in one tap instead of hunting through Settings.
+    management_bot_username: str | None = None
     # SQLite file backing the recent-message cache (anti-delete/edit) — a
     # process restart must NOT lose messages that are "in flight" between
     # being received and possibly deleted, so this lives on disk, not RAM.

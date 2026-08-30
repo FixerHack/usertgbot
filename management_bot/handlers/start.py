@@ -2,20 +2,26 @@ from datetime import datetime, timezone
 
 from aiogram import Router
 from aiogram.filters import CommandObject, CommandStart
+from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 
 from db.session import get_session
 from management_bot import dashboard, keyboards, storage
+from management_bot.handlers import connect
 from shared import referrals
 from shared.i18n import lang_of
 
 router = Router(name="start")
 
 _REF_PREFIX = "ref_"
+# Deep link used by the "re-link account" button on the session-expired notice
+# the userbot sends (userbot/worker.py) — drops the owner straight into the
+# connect flow instead of the dashboard.
+_CONNECT_PAYLOAD = "connect"
 
 
 @router.message(CommandStart())
-async def cmd_start(message: Message, command: CommandObject) -> None:
+async def cmd_start(message: Message, command: CommandObject, state: FSMContext) -> None:
     lang = lang_of(message)
     full_name = message.from_user.full_name if message.from_user else None
     username = message.from_user.username if message.from_user else None
@@ -31,3 +37,6 @@ async def cmd_start(message: Message, command: CommandObject) -> None:
 
     text = dashboard.build_start_text(status, datetime.now(timezone.utc), lang)
     await message.answer(text, parse_mode="HTML", reply_markup=keyboards.main_menu(lang))
+
+    if command.args == _CONNECT_PAYLOAD:
+        await connect.cmd_connect(message, state)

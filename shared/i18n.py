@@ -418,9 +418,20 @@ _TR: dict[str, tuple[str, str, str]] = {
     "preview_no_text": ("(без тексту)", "(без текста)", "(no text)"),
     # userbot command responses (owner's language)
     "session_invalid": (
-        "⚠️ Ваш акаунт відключено — сесія недійсна. Прив'яжіть акаунт заново в боті.",
-        "⚠️ Ваш аккаунт отключён — сессия недействительна. Привяжите аккаунт заново в боте.",
-        "⚠️ Your account was disconnected — the session is invalid. Re-link it in the bot.",
+        "⚠️ Ваш акаунт відключено — сесія більше недійсна.\n\n"
+        "Таке буває після виходу з акаунта на іншому пристрої, зміни пароля або "
+        "завершення сеансу вручну. Щоб бот працював далі, прив'яжіть акаунт заново.",
+        "⚠️ Ваш аккаунт отключён — сессия больше недействительна.\n\n"
+        "Такое бывает после выхода из аккаунта на другом устройстве, смены пароля или "
+        "завершения сеанса вручную. Чтобы бот работал дальше, привяжите аккаунт заново.",
+        "⚠️ Your account was disconnected — the session is no longer valid.\n\n"
+        "This happens after logging out on another device, changing your password, or "
+        "ending the session manually. Re-link your account to keep the bot working.",
+    ),
+    "btn_relink_account": (
+        "🔗 Прив'язати акаунт заново",
+        "🔗 Привязать аккаунт заново",
+        "🔗 Re-link account",
     ),
     "ub_no_sub": (
         "❌ Немає активної підписки. Оформіть у керуючому боті.",
