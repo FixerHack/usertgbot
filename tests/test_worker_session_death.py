@@ -128,6 +128,39 @@ async def test_unauthorized_without_raising_also_deactivates(db_session, monkeyp
     assert len(captured) == 1
 
 
+async def test_client_identifies_itself_to_the_owner(db_session, monkeypatch, captured):
+    """Clients see this in Settings -> Devices. Left to Telethon's defaults it
+    reads as an anonymous "PC 64bit" in a foreign datacenter, which invites
+    them to terminate the session their subscription depends on."""
+    captured_kwargs: dict = {}
+
+    def spy(**kwargs):
+        captured_kwargs.update(kwargs)
+        return _FakeClient(authorized=True)
+
+    await upsert_user(db_session, 5001, username="victim")
+    row = await save_session(
+        db_session, telegram_id=5001, phone_number="+380000000000", session_string="stub"
+    )
+    await db_session.commit()
+
+    monkeypatch.setattr(worker, "StringSession", lambda s: s)
+    monkeypatch.setattr(worker, "TelegramClient", spy)
+
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def fake_get_session():
+        yield db_session
+
+    monkeypatch.setattr(worker, "get_session", fake_get_session)
+    await worker.run_worker(row.id, row.user_id, 5001, "uk", "stub")
+
+    assert captured_kwargs["device_model"] == "User Agent Bot"
+    assert captured_kwargs["system_version"]
+    assert captured_kwargs["app_version"]
+
+
 async def test_healthy_session_is_left_alone(db_session, monkeypatch, captured):
     session_id = await _run(db_session, monkeypatch, _FakeClient(authorized=True))
 

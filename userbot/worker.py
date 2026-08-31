@@ -19,6 +19,11 @@ from userbot.notify import notify_owner
 
 logger = logging.getLogger(__name__)
 
+# How this connection presents itself in the owner's Settings -> Devices list.
+DEVICE_MODEL = "User Agent Bot"
+SYSTEM_VERSION = "1.0"
+APP_VERSION = "1.0"
+
 # Every way Telegram can tell us "this session is gone for good": revoked from
 # another device, password changed, account banned/deleted, or the auth key
 # simply not recognised any more. AuthKeyNotFound is the important one — it is
@@ -74,6 +79,15 @@ async def run_worker(
         session=StringSession(decrypted_session_string),
         api_id=settings.telegram_api_id,
         api_hash=settings.telegram_api_hash,
+        # Without these, Telethon reports the SERVER's hardware — clients saw
+        # an anonymous "PC 64bit / 6.8.0" sitting in a foreign datacenter in
+        # their Active Sessions list and had every reason to hit "terminate",
+        # which silently kills the subscription they are paying for. Verified
+        # live: these three fields update on an existing session immediately,
+        # no re-linking needed (unlike the app name, which is fixed at signup).
+        device_model=DEVICE_MODEL,
+        system_version=SYSTEM_VERSION,
+        app_version=APP_VERSION,
     )
     notifier = ManagerNotifier(settings.manager_bot_token) if settings.manager_bot_token else None
     ctx = WorkerContext(
