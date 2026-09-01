@@ -57,3 +57,44 @@ def test_lang_of_reads_from_user():
         from_user = _U()
 
     assert i18n.lang_of(_Ev()) == "ru"
+
+
+def test_no_key_is_left_untranslated():
+    """All three slots identical AND containing Cyrillic is the signature of a
+    key that was added in Ukrainian and never translated — a plain-Latin or
+    emoji-only string repeating across languages is legitimate."""
+    import re
+
+    cyrillic = re.compile(r"[а-яїієґА-ЯЇІЄҐ]")
+    # Language names are deliberately identical everywhere: a language picker
+    # is only useful if each option reads in its OWN language, whatever the
+    # UI is currently set to.
+    endonyms = {"lang_uk", "lang_ru", "lang_en"}
+    untranslated = [
+        key
+        for key, (uk, ru, en) in i18n._TR.items()
+        if key not in endonyms and uk == ru == en and cyrillic.search(uk)
+    ]
+    assert untranslated == [], f"same Cyrillic text in all 3 languages: {untranslated}"
+
+
+def test_format_placeholders_match_across_languages():
+    """A `{name}` slot present in one language but missing in another either
+    silently drops information or raises KeyError at call time — neither is
+    visible until a user in that language hits the message."""
+    import re
+
+    slots = re.compile(r"\{(\w+)\}")
+    mismatched = {
+        key: [sorted(set(slots.findall(s))) for s in row]
+        for key, row in i18n._TR.items()
+        if len({frozenset(slots.findall(s)) for s in row}) > 1
+    }
+    assert mismatched == {}, f"placeholder sets differ between languages: {mismatched}"
+
+
+def test_new_miniapp_and_info_keys_are_translated():
+    assert i18n.t("en", "wa_code_title") == "Enter the code"
+    assert i18n.t("ru", "wa_done_title") == "Аккаунт подключён"
+    assert i18n.t("en", "ub_info_no_username") == "🔗 no username"
+    assert i18n.t("ru", "adm_stopped").startswith("🛑")

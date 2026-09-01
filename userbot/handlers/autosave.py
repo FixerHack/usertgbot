@@ -193,10 +193,14 @@ async def _handle(
     location: tuple[float, float] | None = None,
 ) -> None:
     # never react to bots — including our own management/manager bots
-    sender_ref, is_bot = (await entities.resolve(client, sender_id)) if sender_id else ("невідомо", False)
+    sender_ref, is_bot = (
+        (await entities.resolve(client, sender_id, ctx.owner_lang))
+        if sender_id
+        else (t(ctx.owner_lang, "unknown"), False)
+    )
     if is_bot:
         return
-    chat_ref = await entities.ref(client, chat_id)
+    chat_ref = await entities.ref(client, chat_id, ctx.owner_lang)
 
     try:
         async with get_session() as db:

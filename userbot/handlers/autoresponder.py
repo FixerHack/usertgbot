@@ -75,7 +75,9 @@ async def _respond(client, event, ctx: WorkerContext, sender_id: int, sender=Non
 
     # notify the owner that the autoresponder fired, and to whom
     name = " ".join(p for p in [getattr(sender, "first_name", None), getattr(sender, "last_name", None)] if p)
-    sender_ref = formatting.entity_ref(sender_id, getattr(sender, "username", None), name or None)
+    sender_ref = formatting.entity_ref(
+        sender_id, getattr(sender, "username", None), name or None, lang=ctx.owner_lang
+    )
     await notify_owner(ctx, formatting.format_autoresponder_notice(sender_ref, event.raw_text or "", ctx.owner_lang))
 
 

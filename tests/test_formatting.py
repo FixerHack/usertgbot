@@ -93,3 +93,32 @@ def test_info_includes_phone():
         entity_id=1, is_chat=False, title_or_name="X", phone="380501234567"
     )
     assert "+380501234567" in formatting.format_target_info(info)
+
+
+# --- localization ------------------------------------------------------------
+
+
+def test_info_labels_follow_the_language():
+    """`.info` output goes to the paying client, so its labels must follow
+    the language they chose — not a hardcoded Ukrainian default."""
+    user = formatting.TargetInfo(entity_id=1, is_chat=False, title_or_name="X")
+    assert "без юзернейму" in formatting.format_target_info(user, "uk")
+    assert "без юзернейма" in formatting.format_target_info(user, "ru")
+    assert "no username" in formatting.format_target_info(user, "en")
+
+    chat = formatting.TargetInfo(entity_id=-1, is_chat=True, title_or_name="G", members_count=7)
+    assert "Учасників" in formatting.format_target_info(chat, "uk")
+    assert "Участников" in formatting.format_target_info(chat, "ru")
+    assert "Members" in formatting.format_target_info(chat, "en")
+
+
+def test_premium_label_follows_the_language():
+    plain = formatting.TargetInfo(entity_id=1, is_chat=False, title_or_name="X")
+    assert "без Premium" in formatting.format_target_info(plain, "uk")
+    assert "no Premium" in formatting.format_target_info(plain, "en")
+
+
+def test_entity_ref_unknown_follows_the_language():
+    assert formatting.entity_ref(None, lang="uk") == "невідомо"
+    assert formatting.entity_ref(None, lang="ru") == "неизвестно"
+    assert formatting.entity_ref(None, lang="en") == "unknown"

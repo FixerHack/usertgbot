@@ -32,7 +32,7 @@ class TargetInfo:
     phone: str | None = None
 
 
-def format_target_info(info: TargetInfo) -> str:
+def format_target_info(info: TargetInfo, lang: str = "uk") -> str:
     """Short, human summary for `.info` (works for both a user and a chat)."""
     lines: list[str] = []
     if info.is_chat:
@@ -41,7 +41,7 @@ def format_target_info(info: TargetInfo) -> str:
         if info.username:
             lines.append(f"🔗 @{info.username}")
         if info.members_count is not None:
-            lines.append(f"👥 Учасників: {info.members_count}")
+            lines.append(_t("ub_info_members", lang, count=info.members_count))
     else:
         badges = "".join(
             b for b, on in (("⭐️", info.is_premium), ("✅", info.is_verified), ("🤖", info.is_bot)) if on
@@ -49,10 +49,10 @@ def format_target_info(info: TargetInfo) -> str:
         name = _esc(info.title_or_name) + (f" {badges}" if badges else "")
         lines.append(f"👤 <b>{name}</b>")
         lines.append(f"🆔 <code>{info.entity_id}</code>")
-        lines.append(f"🔗 @{info.username}" if info.username else "🔗 без юзернейму")
+        lines.append(f"🔗 @{info.username}" if info.username else _t("ub_info_no_username", lang))
         if info.phone:
             lines.append(f"📱 +{info.phone.lstrip('+')}")
-        lines.append("⭐️ Premium" if info.is_premium else "◽️ без Premium")
+        lines.append(_t("ub_info_premium" if info.is_premium else "ub_info_no_premium", lang))
         if info.bio:
             lines.append(f"📝 {_esc(info.bio)}")
     return "\n".join(lines)
@@ -81,14 +81,16 @@ def ban_action(is_private: bool) -> str:
 # --- manager-bot notification bodies --------------------------------------
 
 
-def entity_ref(entity_id: int | None, username: str | None = None, name: str | None = None) -> str:
+def entity_ref(
+    entity_id: int | None, username: str | None = None, name: str | None = None, lang: str = "uk"
+) -> str:
     """Clickable reference: @username (auto-links), else a name link to the
     user, else the bare id."""
     if username:
         return f"@{username}"
     if name:
         return f'<a href="tg://user?id={entity_id}">{_esc(name)}</a>'
-    return f"<code>{entity_id}</code>" if entity_id else _t("unknown")
+    return f"<code>{entity_id}</code>" if entity_id else _t("unknown", lang)
 
 
 def format_deleted_notice(chat_ref: str, sender_ref: str, text: str, lang: str = "uk") -> str:

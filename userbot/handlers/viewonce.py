@@ -51,7 +51,7 @@ def register(client: TelegramClient, ctx: WorkerContext) -> None:
 
 async def _forward(client: TelegramClient, event: events.NewMessage.Event, ctx: WorkerContext, kind: str) -> None:
     message = event.message
-    sender_ref = await entities.ref(client, event.sender_id) if event.sender_id else "—"
+    sender_ref = await entities.ref(client, event.sender_id, ctx.owner_lang) if event.sender_id else "—"
     caption = formatting.format_view_once_notice(sender_ref, kind, ctx.owner_lang)
 
     data = await client.download_media(message, file=bytes)
