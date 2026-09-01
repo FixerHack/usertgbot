@@ -9,20 +9,15 @@ from telethon.sessions import StringSession
 
 from db.queries import deactivate_session
 from db.session import get_session
+from shared.device_identity import device_kwargs
 from shared.i18n import resolve_lang, t
 from shared.notify import ManagerNotifier
 from userbot.config import settings
 from userbot.context import WorkerContext
 from userbot.handlers import autoresponder, autosave, commands, viewonce
 from userbot.message_cache import RecentMessageCache
-from userbot.notify import notify_owner
 
 logger = logging.getLogger(__name__)
-
-# How this connection presents itself in the owner's Settings -> Devices list.
-DEVICE_MODEL = "User Agent Bot"
-SYSTEM_VERSION = "1.0"
-APP_VERSION = "1.0"
 
 # Every way Telegram can tell us "this session is gone for good": revoked from
 # another device, password changed, account banned/deleted, or the auth key
@@ -59,12 +54,25 @@ def _relink_keyboard(lang: str) -> InlineKeyboardMarkup | None:
 
 
 async def _mark_session_dead(ctx: WorkerContext, session_id: int, lang: str, reason: str) -> None:
-    """Deactivate the session and tell the owner, exactly once."""
+    """Deactivate the session and tell the owner, exactly once.
+
+    Via the MAIN bot, not `notify_owner`'s manager bot: everything else this
+    module pushes (`.info`, `.check`, autosave copies) is a nice-to-have that
+    can fall back to posting in-chat if the manager-bot DM fails, but "your
+    account fell off, re-link it" is the one message that must not silently
+    depend on an opt-in chat the owner may never have started.
+    """
     logger.warning("session_id=%s is dead (%s); deactivating", session_id, reason)
     async with get_session() as db:
         await deactivate_session(db, session_id)
         await db.commit()
-    await notify_owner(ctx, t(lang, "session_invalid"), reply_markup=_relink_keyboard(lang))
+    notifier = ManagerNotifier(settings.bot_token)
+    try:
+        await notifier.send_text(
+            ctx.owner_telegram_id, t(lang, "session_invalid"), reply_markup=_relink_keyboard(lang)
+        )
+    finally:
+        await notifier.close()
 
 
 async def run_worker(
@@ -79,15 +87,10 @@ async def run_worker(
         session=StringSession(decrypted_session_string),
         api_id=settings.telegram_api_id,
         api_hash=settings.telegram_api_hash,
-        # Without these, Telethon reports the SERVER's hardware — clients saw
-        # an anonymous "PC 64bit / 6.8.0" sitting in a foreign datacenter in
-        # their Active Sessions list and had every reason to hit "terminate",
-        # which silently kills the subscription they are paying for. Verified
-        # live: these three fields update on an existing session immediately,
-        # no re-linking needed (unlike the app name, which is fixed at signup).
-        device_model=DEVICE_MODEL,
-        system_version=SYSTEM_VERSION,
-        app_version=APP_VERSION,
+        # See shared/device_identity.py — without this, clients saw an
+        # anonymous "PC 64bit / 6.8.0" in a foreign datacenter and had every
+        # reason to hit "terminate", silently killing their subscription.
+        **device_kwargs(),
     )
     notifier = ManagerNotifier(settings.manager_bot_token) if settings.manager_bot_token else None
     ctx = WorkerContext(

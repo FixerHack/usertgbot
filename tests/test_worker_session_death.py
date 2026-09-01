@@ -44,15 +44,27 @@ class _FakeClient:
 
 @pytest.fixture
 def captured(monkeypatch):
-    """Capture notify_owner calls and stub out the pieces that need a network."""
+    """Capture ManagerNotifier.send_text calls and stub out network pieces.
+
+    _mark_session_dead builds its own ManagerNotifier(settings.bot_token) —
+    deliberately the MAIN bot's token, not notify_owner's manager-bot one, so
+    this notice doesn't depend on an opt-in chat the owner may never have
+    started. run_worker's ctx.notifier construction hits the same faked class.
+    """
     sent: list[dict] = []
 
-    async def fake_notify(ctx, text, **kwargs):
-        sent.append({"text": text, "reply_markup": kwargs.get("reply_markup")})
-        return True
+    class _FakeNotifier:
+        def __init__(self, token: str) -> None:
+            self.token = token
 
-    monkeypatch.setattr(worker, "notify_owner", fake_notify)
-    monkeypatch.setattr(worker, "ManagerNotifier", lambda *a, **k: None)
+        async def send_text(self, chat_id, text, *, reply_markup=None, **kwargs):
+            sent.append({"text": text, "reply_markup": reply_markup})
+            return True
+
+        async def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(worker, "ManagerNotifier", _FakeNotifier)
     for module in (worker.commands, worker.autosave, worker.autoresponder, worker.viewonce):
         monkeypatch.setattr(module, "register", lambda client, ctx: None)
     return sent

@@ -9,6 +9,13 @@ class UserbotSettings(BaseSettings):
     telegram_api_id: int
     telegram_api_hash: str
     encryption_key: str
+    # The main bot's own token. Used for the session-expired notice
+    # specifically: unlike the manager bot, the owner is GUARANTEED to
+    # already have a chat with this one (it's how they connected in the
+    # first place), whereas the manager-bot chat is a separate opt-in step
+    # many people skip — confirmed live: that notice silently vanished when
+    # only sent through an unstarted manager-bot chat.
+    bot_token: str
     # optional: when set, workers push notifications to owners via this bot
     manager_bot_token: str | None = None
     # Username of the MANAGEMENT bot (no @). Only used to build a "re-link
