@@ -20,8 +20,11 @@ _REF_PREFIX = "ref_"
 _CONNECT_PAYLOAD = "connect"
 
 
-@router.message(CommandStart())
-async def cmd_start(message: Message, command: CommandObject, state: FSMContext) -> None:
+async def show_dashboard(message: Message, *, referral_code: str | None = None) -> None:
+    """The actual /start body — upsert the user, render the dashboard. Split
+    out so the "🏠 Меню" reply-button (management_bot/handlers/menu.py) can
+    call it directly without needing a CommandObject/FSMContext, which only
+    the real /start command has."""
     lang = lang_of(message)
     full_name = message.from_user.full_name if message.from_user else None
     username = message.from_user.username if message.from_user else None
@@ -30,13 +33,19 @@ async def cmd_start(message: Message, command: CommandObject, state: FSMContext)
         user = await storage.upsert_user(
             db, message.chat.id, username=username, full_name=full_name, language_code=language_code
         )
-        if command.args and command.args.startswith(_REF_PREFIX):
-            await referrals.attribute_user(db, user, command.args[len(_REF_PREFIX):])
+        if referral_code:
+            await referrals.attribute_user(db, user, referral_code)
         await db.commit()
         status = await storage.get_user_status(db, message.chat.id)
 
     text = dashboard.build_start_text(status, datetime.now(timezone.utc), lang)
     await message.answer(text, parse_mode="HTML", reply_markup=keyboards.main_menu(lang))
+
+
+@router.message(CommandStart())
+async def cmd_start(message: Message, command: CommandObject, state: FSMContext) -> None:
+    referral_code = command.args[len(_REF_PREFIX):] if command.args and command.args.startswith(_REF_PREFIX) else None
+    await show_dashboard(message, referral_code=referral_code)
 
     if command.args == _CONNECT_PAYLOAD:
         await connect.cmd_connect(message, state)

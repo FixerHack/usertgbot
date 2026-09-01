@@ -35,4 +35,4 @@ async def on_support(message: Message) -> None:
 
 @router.message(F.text.in_(variants("btn_menu")))
 async def on_menu(message: Message) -> None:
-    await start.cmd_start(message)
+    await start.show_dashboard(message)

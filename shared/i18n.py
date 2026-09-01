@@ -179,6 +179,47 @@ _TR: dict[str, tuple[str, str, str]] = {
         "❌ Не удалось распознать номер. Используйте кнопку ниже.",
         "❌ Couldn't read the number. Use the button below.",
     ),
+    "connect_miniapp_button": ("🔗 Продовжити підключення", "🔗 Продолжить подключение", "🔗 Continue connecting"),
+    "connect_miniapp_intro": (
+        "Натисніть кнопку нижче — вхід у Telegram відбудеться прямо тут, у застосунку.\n\n"
+        "⏱ Посилання дійсне 15 хвилин. Не встигли — просто натисніть «Прив'язати акаунт» ще раз.",
+        "Нажмите кнопку ниже — вход в Telegram произойдёт прямо здесь, в приложении.\n\n"
+        "⏱ Ссылка действительна 15 минут. Не успели — просто нажмите «Привязать аккаунт» ещё раз.",
+        "Tap the button below — you'll sign in to Telegram right inside the app.\n\n"
+        "⏱ This link is valid for 15 minutes. If it expires, just tap «Link account» again.",
+    ),
+    "connect_rate_limited": (
+        "⏳ Зачекайте хвилину перед повторною спробою.",
+        "⏳ Подождите минуту перед повторной попыткой.",
+        "⏳ Please wait a minute before trying again.",
+    ),
+    "connect_already_active": (
+        "⏳ Ви вже підключаєте акаунт.\n\n"
+        "Скористайтеся кнопкою «Продовжити підключення» вище — вона ще діє {minutes} хв. "
+        "Якщо хочете почати заново, дочекайтеся, поки цей час мине.",
+        "⏳ Вы уже подключаете аккаунт.\n\n"
+        "Используйте кнопку «Продолжить подключение» выше — она действует ещё {minutes} мин. "
+        "Если хотите начать заново, дождитесь, пока это время истечёт.",
+        "⏳ You already have a connection in progress.\n\n"
+        "Use the «Continue connecting» button above — it's valid for {minutes} more min. "
+        "To start over, wait for that time to run out.",
+    ),
+    "connect_expired_notice": (
+        "⏱ <b>Час вийшов</b>\n\n"
+        "Посилання для підключення акаунта більше не діє. "
+        "Спробувати ще раз можна в налаштуваннях.",
+        "⏱ <b>Время вышло</b>\n\n"
+        "Ссылка для подключения аккаунта больше не действует. "
+        "Попробовать ещё раз можно в настройках.",
+        "⏱ <b>Time's up</b>\n\n"
+        "The account connection link is no longer valid. "
+        "You can try again from settings.",
+    ),
+    "connect_expired_btn": (
+        "⚙️ Відкрити налаштування",
+        "⚙️ Открыть настройки",
+        "⚙️ Open settings",
+    ),
     "connect_working": (
         "⏳ Підключаємось до Telegram, зачекайте кілька секунд…",
         "⏳ Подключаемся к Telegram, подождите несколько секунд…",
@@ -461,9 +502,14 @@ _TR: dict[str, tuple[str, str, str]] = {
         "❌ .check limit reached ({used}/{quota}). Resets next month.",
     ),
     "ub_send_bad_count": (
-        "❌ Кількість має бути від 1 до 100: .send 10 текст",
-        "❌ Количество должно быть от 1 до 100: .send 10 текст",
-        "❌ Count must be between 1 and 100: .send 10 text",
+        "❌ Кількість має бути від 1 до {max}: .send 10 текст",
+        "❌ Количество должно быть от 1 до {max}: .send 10 текст",
+        "❌ Count must be between 1 and {max}: .send 10 text",
+    ),
+    "ub_send_cooldown": (
+        "⏳ Зачекайте ще {minutes} хв перед наступним .send.",
+        "⏳ Подождите ещё {minutes} мин перед следующим .send.",
+        "⏳ Wait {minutes} more min before the next .send.",
     ),
     "ub_send_flood_stopped": (
         "⚠️ Telegram тимчасово обмежив надсилання. Надіслано {sent}/{total}.",
@@ -517,6 +563,95 @@ _TR: dict[str, tuple[str, str, str]] = {
         "🚫 Ваш аккаунт заблокирован администратором.",
         "🚫 Your account has been blocked by an administrator.",
     ),
+    # --- .info output (userbot/formatting.py) ---
+    "ub_info_members": ("👥 Учасників: {count}", "👥 Участников: {count}", "👥 Members: {count}"),
+    "ub_info_no_username": ("🔗 без юзернейму", "🔗 без юзернейма", "🔗 no username"),
+    "ub_info_premium": ("⭐️ Premium", "⭐️ Premium", "⭐️ Premium"),
+    "ub_info_no_premium": ("◽️ без Premium", "◽️ без Premium", "◽️ no Premium"),
+    "ub_entity_chat": ("чат", "чат", "chat"),
+    "ub_entity_user": ("користувач", "пользователь", "user"),
+    # --- admin panel (owner-only commands) ---
+    "adm_starting": ("🚀 Запускаю адмін-панель…", "🚀 Запускаю админ-панель…", "🚀 Starting the admin panel…"),
+    "adm_start_failed": (
+        "❌ Не вдалося запустити панель. Дивіться логи.",
+        "❌ Не удалось запустить панель. Смотрите логи.",
+        "❌ Couldn't start the panel. Check the logs.",
+    ),
+    "adm_panel_ready": (
+        "🛠 <b>Адмін-панель</b>\n\n🔗 {url}\n\nТокен: <code>{token}</code>\nЗупинити — /admin_stop",
+        "🛠 <b>Админ-панель</b>\n\n🔗 {url}\n\nТокен: <code>{token}</code>\nОстановить — /admin_stop",
+        "🛠 <b>Admin panel</b>\n\n🔗 {url}\n\nToken: <code>{token}</code>\nStop it — /admin_stop",
+    ),
+    "adm_stopped": ("🛑 Адмін-панель зупинено.", "🛑 Админ-панель остановлена.", "🛑 Admin panel stopped."),
+    # --- Mini App connect page (connect_web) ---
+    # Served into the page itself, so these carry the inline HTML the layout
+    # needs (<br>, <b>). Anything interpolated into them at runtime is
+    # escaped first — see connect_web/static/app.js.
+    "wa_title": ("Підключення акаунта", "Подключение аккаунта", "Connect your account"),
+    "wa_outside_title": ("Відкрийте через бота", "Откройте через бота", "Open this from the bot"),
+    "wa_outside_body": (
+        "Ця сторінка працює лише всередині Telegram.<br>Поверніться до бота і натисніть «Прив'язати акаунт».",
+        "Эта страница работает только внутри Telegram.<br>Вернитесь к боту и нажмите «Привязать аккаунт».",
+        "This page only works inside Telegram.<br>Go back to the bot and tap «Link account».",
+    ),
+    "wa_expired_title": ("Час вийшов", "Время вышло", "Time's up"),
+    "wa_expired_body": (
+        "Це посилання вже недійсне.<br>Поверніться в бот і натисніть «Прив'язати акаунт» ще раз —<br>це займе хвилину.",
+        "Эта ссылка больше недействительна.<br>Вернитесь в бот и нажмите «Привязать аккаунт» ещё раз —<br>это займёт минуту.",
+        "This link is no longer valid.<br>Go back to the bot and tap «Link account» again —<br>it only takes a minute.",
+    ),
+    "wa_code_title": ("Введіть код", "Введите код", "Enter the code"),
+    "wa_code_sending": (
+        "Надсилаємо код на <b>{phone}</b>…",
+        "Отправляем код на <b>{phone}</b>…",
+        "Sending a code to <b>{phone}</b>…",
+    ),
+    "wa_code_sent": (
+        "Ми надіслали код у ваш чат <b>Telegram</b>.",
+        "Мы отправили код в ваш чат <b>Telegram</b>.",
+        "We sent the code to your <b>Telegram</b> chat.",
+    ),
+    "wa_code_phone": ("Номер: <b>{phone}</b>", "Номер: <b>{phone}</b>", "Number: <b>{phone}</b>"),
+    "wa_code_retry": ("Надіслати код ще раз", "Отправить код ещё раз", "Send the code again"),
+    "wa_code_send_failed": (
+        "Не вдалося надіслати код: {error}",
+        "Не удалось отправить код: {error}",
+        "Couldn't send the code: {error}",
+    ),
+    "wa_code_expired": (
+        "Код застарів — запросіть новий.",
+        "Код устарел — запросите новый.",
+        "The code expired — request a new one.",
+    ),
+    "wa_code_too_short": ("Код закороткий.", "Код слишком короткий.", "That code is too short."),
+    "wa_code_checking": ("Перевіряємо код…", "Проверяем код…", "Checking the code…"),
+    "wa_resuming": ("Відновлюємо спробу…", "Восстанавливаем попытку…", "Resuming your attempt…"),
+    "wa_error": ("Помилка: {error}", "Ошибка: {error}", "Error: {error}"),
+    "wa_server_rejected": ("Сервер відхилив: {error}", "Сервер отклонил: {error}", "The server rejected it: {error}"),
+    "wa_2fa_title": (
+        "Пароль двоетапної перевірки",
+        "Пароль двухэтапной проверки",
+        "Two-step verification password",
+    ),
+    "wa_2fa_body": (
+        "Введіть хмарний пароль вашого акаунта.",
+        "Введите облачный пароль вашего аккаунта.",
+        "Enter your account's cloud password.",
+    ),
+    "wa_2fa_placeholder": ("Пароль", "Пароль", "Password"),
+    "wa_2fa_submit": ("Підтвердити", "Подтвердить", "Confirm"),
+    "wa_2fa_checking": ("Перевіряємо пароль…", "Проверяем пароль…", "Checking the password…"),
+    "wa_2fa_note": (
+        "Пароль перевіряється <b>на вашому пристрої</b> і не надсилається ані нам, ані будь-кому іншому.",
+        "Пароль проверяется <b>на вашем устройстве</b> и не отправляется ни нам, ни кому-либо ещё.",
+        "Your password is checked <b>on your own device</b> and is never sent to us or anyone else.",
+    ),
+    "wa_done_title": ("Акаунт підключено", "Аккаунт подключён", "Account connected"),
+    "wa_done_body": (
+        "Готово — можете закривати це вікно.",
+        "Готово — можете закрывать это окно.",
+        "All done — you can close this window.",
+    ),
 }
 
 _FEATURES: dict[str, tuple[list[str], list[str], list[str]]] = {
@@ -529,9 +664,9 @@ _FEATURES: dict[str, tuple[list[str], list[str], list[str]]] = {
          ".check — 5/month", "Auto-save of deleted/edited messages"],
     ),
     "pro": (
-        ["Усе зі Standard", ".check — 10/місяць", "Автовідповідач (налаштовується)", ".send — масове надсилання (до 100 повідомлень)"],
-        ["Всё из Standard", ".check — 10/месяц", "Автоответчик (настраивается)", ".send — массовая рассылка (до 100 сообщений)"],
-        ["Everything in Standard", ".check — 10/month", "Autoresponder (configurable)", ".send — bulk send (up to 100 messages)"],
+        ["Усе зі Standard", ".check — 10/місяць", "Автовідповідач (налаштовується)", ".send — масове надсилання (до 50 повідомлень, раз на 10 хв)"],
+        ["Всё из Standard", ".check — 10/месяц", "Автоответчик (настраивается)", ".send — массовая рассылка (до 50 сообщений, раз в 10 мин)"],
+        ["Everything in Standard", ".check — 10/month", "Autoresponder (configurable)", ".send — bulk send (up to 50 messages, once per 10 min)"],
     ),
     "premium": (
         ["🚧 В розробці"],

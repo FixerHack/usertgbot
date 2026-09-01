@@ -10,13 +10,16 @@ tracks which step the chat is on.
 
 import asyncio
 import logging
+from datetime import datetime, timezone
+from math import ceil
 
 from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message, WebAppInfo
 
+from connect_web.server import connect_server
 from db import queries
 from db.session import get_session
 from management_bot import keyboards, storage
@@ -30,6 +33,7 @@ from management_bot.login import (
     WrongPassword,
     login_manager,
 )
+from shared import connect_tokens
 from shared.i18n import lang_of, t, variants
 
 logger = logging.getLogger(__name__)
@@ -50,6 +54,32 @@ async def cmd_connect(message: Message, state: FSMContext) -> None:
     if active is None:
         await message.answer(t(lang, "need_subscription"))
         return
+
+    # An attempt already in flight: its Mini App button is still in the chat
+    # and still valid. Handing out a second token here would silently orphan
+    # that button (it would still open, but onto a login the user has moved
+    # on from), so point them back at the one they already have instead.
+    if settings.webapp_api_id and settings.webapp_api_hash:
+        async with get_session() as db:
+            pending = await connect_tokens.get_active_token(db, message.chat.id)
+        if pending is not None:
+            left = pending.expires_at - datetime.now(timezone.utc).replace(tzinfo=None)
+            minutes = max(1, ceil(left.total_seconds() / 60))
+            await state.clear()
+            await message.answer(t(lang, "connect_already_active", minutes=minutes))
+            return
+
+    # A re-link after unlinking (or after a session died) already has a phone
+    # on file from a previous connect — skip asking for the contact button
+    # again. Bot API can't read a phone from the profile even if the user has
+    # it set to "everyone" visible, so a past session is the only source that
+    # actually exists.
+    async with get_session() as db:
+        known_phone = await storage.get_last_known_phone(db, message.chat.id)
+    if known_phone:
+        await _dispatch_phone(message, state, known_phone)
+        return
+
     await state.set_state(ConnectStates.waiting_for_phone)
     await message.answer(t(lang, "connect_ask_phone"), reply_markup=keyboards.phone_request_keyboard(lang))
 
@@ -57,7 +87,7 @@ async def cmd_connect(message: Message, state: FSMContext) -> None:
 @router.message(ConnectStates.waiting_for_phone, F.contact)
 async def on_contact(message: Message, state: FSMContext) -> None:
     phone = storage.normalize_phone(message.contact.phone_number)
-    await _begin_login(message, state, phone)
+    await _dispatch_phone(message, state, phone)
 
 
 @router.message(ConnectStates.waiting_for_phone, F.text)
@@ -66,7 +96,75 @@ async def on_typed_phone(message: Message, state: FSMContext) -> None:
     if len(phone) < 8:  # "+" plus at least a few digits
         await message.answer(t(lang_of(message), "connect_bad_phone"), reply_markup=keyboards.phone_request_keyboard(lang_of(message)))
         return
-    await _begin_login(message, state, phone)
+    await _dispatch_phone(message, state, phone)
+
+
+async def _dispatch_phone(message: Message, state: FSMContext, phone: str) -> None:
+    """Both entry points converge here. Unset WEBAPP_API_ID/HASH (the default,
+    including on production right now) falls straight through to the old
+    in-chat keypad flow, untouched — this is the whole switch, no explicit
+    feature flag needed."""
+    if settings.webapp_api_id and settings.webapp_api_hash:
+        await _begin_miniapp_login(message, state, phone)
+    else:
+        await _begin_login(message, state, phone)
+
+
+async def _begin_miniapp_login(message: Message, state: FSMContext, phone: str) -> None:
+    lang = lang_of(message)
+    await state.clear()  # the rest of the flow happens in the Mini App, not the chat
+
+    async with get_session() as db:
+        try:
+            token = await connect_tokens.create_token(
+                db, telegram_id=message.chat.id, chat_id=message.chat.id, phone=phone
+            )
+        except ValueError:
+            await db.rollback()
+            await message.answer(t(lang, "connect_rate_limited"))
+            return
+        await db.commit()
+        token_value, token_id = token.token, token.id
+
+    try:
+        base_url = await connect_server.start(
+            port=settings.connect_web_port,
+            bot_token=settings.bot_token,
+            webapp_api_id=settings.webapp_api_id,
+            webapp_api_hash=settings.webapp_api_hash,
+            ngrok_authtoken=settings.ngrok_authtoken,
+            ngrok_domain=settings.ngrok_domain,
+            manager_bot_username=settings.manager_bot_username,
+        )
+    except Exception:
+        logger.exception("failed to start connect_web for chat_id=%s", message.chat.id)
+        await message.answer(t(lang, "connect_error"))
+        return
+
+    if not base_url.startswith("https://"):
+        # Telegram refuses to open a web_app button over plain http — sending
+        # it anyway would be a dead button with no error visible to the user.
+        # Most likely cause locally: NGROK_AUTHTOKEN isn't set.
+        logger.error(
+            "connect_web has no HTTPS origin (got %s) — check NGROK_AUTHTOKEN; refusing to send a dead button",
+            base_url,
+        )
+        await message.answer(t(lang, "connect_error"))
+        return
+
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[[
+            InlineKeyboardButton(
+                text=t(lang, "connect_miniapp_button"),
+                web_app=WebAppInfo(url=f"{base_url}/connect/{token_value}"),
+            )
+        ]]
+    )
+    sent = await message.answer(t(lang, "connect_miniapp_intro"), reply_markup=kb)
+
+    async with get_session() as db:
+        await connect_tokens.set_message_id(db, token_id, sent.message_id)
+        await db.commit()
 
 
 # Fake-but-smooth progress: there's no real byte-level progress to report

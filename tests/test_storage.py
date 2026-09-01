@@ -100,3 +100,36 @@ async def test_get_status_prefers_active_subscription(db_session):
 
     status = await storage.get_user_status(db_session, 1001)
     assert status.subscription.tariff == "pro"
+
+
+async def test_get_last_known_phone_none_for_new_user(db_session):
+    assert await storage.get_last_known_phone(db_session, 9001) is None
+
+
+async def test_get_last_known_phone_from_active_session(db_session):
+    await storage.save_session(db_session, telegram_id=1001, phone_number="+15551234567", session_string="s")
+    await db_session.commit()
+
+    assert await storage.get_last_known_phone(db_session, 1001) == "+15551234567"
+
+
+async def test_get_last_known_phone_survives_unlink(db_session):
+    """A deactivated (unlinked / dead-session) row must still answer the
+    question — that's the whole point: re-link shouldn't have to ask again."""
+    from db.queries import deactivate_session
+
+    row = await storage.save_session(db_session, telegram_id=1001, phone_number="+15551234567", session_string="s")
+    await db_session.commit()
+    await deactivate_session(db_session, row.id)
+    await db_session.commit()
+
+    assert await storage.get_last_known_phone(db_session, 1001) == "+15551234567"
+
+
+async def test_get_last_known_phone_picks_the_most_recent(db_session):
+    await storage.save_session(db_session, telegram_id=1001, phone_number="+1old", session_string="a")
+    await db_session.commit()
+    await storage.save_session(db_session, telegram_id=1001, phone_number="+2new", session_string="b")
+    await db_session.commit()
+
+    assert await storage.get_last_known_phone(db_session, 1001) == "+2new"

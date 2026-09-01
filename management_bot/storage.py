@@ -111,6 +111,31 @@ async def save_session(
     return row
 
 
+async def get_last_known_phone(session: AsyncSession, telegram_id: int) -> str | None:
+    """The phone from this user's most recent session, active or not.
+
+    Session rows survive deactivation (unlink, dead-session detection) — see
+    save_session's upsert-on-(user, phone) and queries.deactivate_session,
+    neither of which deletes the row. Letting /connect check this first means
+    a re-link after unlinking doesn't have to ask for the contact button
+    again; Bot API has no way to read a phone from the profile directly (even
+    with "everyone" visibility), so a previous session is the only source
+    that's actually available.
+    """
+    # Ordered by id, not created_at: SQLite's CURRENT_TIMESTAMP only has
+    # second resolution, so two sessions created within the same second would
+    # tie under created_at and could return the wrong one — the id is a
+    # reliable insertion order regardless of clock granularity.
+    result = await session.execute(
+        select(Session.phone_number)
+        .join(User, User.id == Session.user_id)
+        .where(User.telegram_id == telegram_id)
+        .order_by(Session.id.desc())
+        .limit(1)
+    )
+    return result.scalar_one_or_none()
+
+
 async def get_user_status(session: AsyncSession, telegram_id: int) -> UserStatus:
     """Subscription + active-session summary for the /status command."""
     result = await session.execute(select(User).where(User.telegram_id == telegram_id))
