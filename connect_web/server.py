@@ -37,7 +37,17 @@ class ConnectWebServer:
         self, *, port: int, bot_token: str, webapp_api_id: int, webapp_api_hash: str,
         ngrok_authtoken: str | None = None, ngrok_domain: str | None = None,
         manager_bot_username: str | None = None,
+        public_url: str | None = None, host: str = "127.0.0.1",
     ) -> str:
+        """`public_url` is the production path: a real domain already terminating
+        TLS in front of us (Caddy), so no tunnel is opened at all — ngrok exists
+        only to give local testing an HTTPS origin Telegram will accept.
+
+        `host` must be 0.0.0.0 in a container: 127.0.0.1 there binds inside the
+        container's own network namespace, where a reverse proxy on the host
+        can never reach it. Locally it stays loopback so the dev machine isn't
+        serving this to its whole network.
+        """
         if self.is_running() and self.base_url:
             return self.base_url
 
@@ -45,7 +55,7 @@ class ConnectWebServer:
             bot_token=bot_token, webapp_api_id=webapp_api_id, webapp_api_hash=webapp_api_hash,
             manager_bot_username=manager_bot_username,
         )
-        config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
+        config = uvicorn.Config(app, host=host, port=port, log_level="warning")
         self._server = uvicorn.Server(config)
         self._server.install_signal_handlers = lambda: None  # not the main thread's job here
         self._task = asyncio.create_task(self._server.serve())
@@ -55,13 +65,15 @@ class ConnectWebServer:
                 break
             await asyncio.sleep(0.1)
 
-        base = f"http://127.0.0.1:{port}"
-        if ngrok_authtoken:
+        base = f"http://{host}:{port}"
+        if public_url:
+            base = public_url.rstrip("/")
+        elif ngrok_authtoken:
             base = await self._open_tunnel(port, ngrok_authtoken, ngrok_domain) or base
         else:
             logger.warning(
-                "connect_web: no NGROK_AUTHTOKEN configured — serving %s, "
-                "which Telegram will refuse to open (needs HTTPS)", base
+                "connect_web: neither CONNECT_PUBLIC_URL nor NGROK_AUTHTOKEN configured — "
+                "serving %s, which Telegram will refuse to open (needs HTTPS)", base
             )
 
         self.base_url = base

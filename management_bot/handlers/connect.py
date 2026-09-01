@@ -135,6 +135,8 @@ async def _begin_miniapp_login(message: Message, state: FSMContext, phone: str) 
             ngrok_authtoken=settings.ngrok_authtoken,
             ngrok_domain=settings.ngrok_domain,
             manager_bot_username=settings.manager_bot_username,
+            public_url=settings.connect_public_url,
+            host=settings.connect_web_host,
         )
     except Exception:
         logger.exception("failed to start connect_web for chat_id=%s", message.chat.id)

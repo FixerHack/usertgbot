@@ -76,6 +76,8 @@ async def run() -> None:
                 ngrok_authtoken=settings.ngrok_authtoken,
                 ngrok_domain=settings.ngrok_domain,
                 manager_bot_username=settings.manager_bot_username,
+                public_url=settings.connect_public_url,
+                host=settings.connect_web_host,
             )
         except Exception:
             logger.exception("connect_web failed to start at boot; will retry on first connect attempt")

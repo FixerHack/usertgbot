@@ -37,6 +37,14 @@ class ManagementBotSettings(BaseSettings):
     webapp_api_id: int | None = None
     webapp_api_hash: str | None = None
     connect_web_port: int = 8081
+    # Production: the real HTTPS origin a reverse proxy (Caddy) already
+    # terminates in front of us. Set it and no tunnel is opened at all —
+    # ngrok above exists only to give LOCAL testing an origin Telegram accepts.
+    connect_public_url: str | None = None
+    # Must be 0.0.0.0 inside a container, or a proxy on the host can never
+    # reach the port; loopback by default so a dev machine doesn't serve this
+    # to its whole network.
+    connect_web_host: str = "127.0.0.1"
 
     # payments
     crypto_pay_token: str | None = None        # @CryptoBot Crypto Pay API token

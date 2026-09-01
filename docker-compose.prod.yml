@@ -37,6 +37,14 @@ services:
       migrate:
         condition: service_completed_successfully
     command: ["uv", "run", "management-bot"]
+    # The Mini App connect page runs inside this process (see
+    # connect_web/server.py). Bound to the HOST's loopback only: Caddy
+    # terminates TLS for moozuku.tech and proxies here, so this port must
+    # never be reachable from the outside world directly. Requires
+    # CONNECT_WEB_HOST=0.0.0.0 in .env — 127.0.0.1 would bind inside the
+    # container's own namespace where Caddy could never reach it.
+    ports:
+      - "127.0.0.1:${CONNECT_WEB_PORT:-8081}:${CONNECT_WEB_PORT:-8081}"
     volumes:
       - ./logs:/app/logs
 
