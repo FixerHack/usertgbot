@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="__WA_LANG__">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>__WA_TITLE__</title>
+<style>
+  :root{
+    --bg:            var(--tg-theme-bg-color, #17212b);
+    --fg:            var(--tg-theme-text-color, #f5f5f5);
+    --hint:          var(--tg-theme-hint-color, #708499);
+    --link:          var(--tg-theme-link-color, #6ab3f3);
+    --section:       var(--tg-theme-section-bg-color, #232e3a);
+    --secondary-bg:  var(--tg-theme-secondary-bg-color, #0e1621);
+    --accent:        var(--tg-theme-button-color, #5288c1);
+    --accent-fg:     var(--tg-theme-button-text-color, #ffffff);
+    --separator:     var(--tg-theme-section-separator-color, rgba(255,255,255,.08));
+    --destructive:   var(--tg-theme-destructive-text-color, #ec3942);
+    --ok:            #4dcd5e;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{
+    margin:0;
+    background:var(--secondary-bg);
+    color:var(--fg);
+    font:16px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,Roboto,sans-serif;
+    padding:0 0 32px;
+  }
+  .hero{padding:28px 20px 18px;text-align:center}
+  .hero .glyph{
+    width:76px;height:76px;margin:0 auto 16px;border-radius:50%;
+    display:flex;align-items:center;justify-content:center;font-size:36px;
+    background:var(--accent);color:var(--accent-fg);
+  }
+  .hero .glyph.done{background:var(--ok)}
+  .hero .glyph.warn{background:var(--destructive)}
+  .hero h1{font-size:20px;font-weight:600;margin:0 0 6px;letter-spacing:-.2px}
+  .hero p{color:var(--hint);font-size:14px;margin:0;line-height:1.45}
+
+  .section{background:var(--section);border-radius:12px;margin:0 16px 14px;overflow:hidden;padding:14px 16px}
+  .phone{font-size:19px;font-weight:600;letter-spacing:.02em;text-align:center}
+
+  /* Countdown ring, pinned top-right: the remaining time reads as a shrinking
+     arc that bleeds toward red, with the digits inside it. On the terminal
+     screens the same ring stops counting and becomes the outcome badge
+     (green ✓ / red ✕) so there's one consistent status object on the page. */
+  #ring-wrap{position:fixed;top:8px;right:10px;width:52px;height:52px;z-index:10;display:none}
+  #ring-wrap.on{display:block}
+  #ring-wrap svg{display:block;width:52px;height:52px}
+  .ring-track{fill:none;stroke:var(--separator);stroke-width:4}
+  .ring-arc{
+    fill:none;stroke-width:4;stroke-linecap:round;
+    transform:rotate(-90deg);transform-origin:50% 50%;
+    /* Deliberately NOT animated. The ring is rewritten every second, so any
+       ~1s transition keeps it permanently mid-flight — and a throttled WebView
+       (backgrounded Mini App) freezes that part-way, leaving the arc and the
+       colour showing one time while the digits show another; measured exactly
+       that while building this. Per tick the colour moves 1/900 of its range
+       anyway, so easing buys nothing. Snapping can't desync. */
+  }
+  #ring-label{
+    position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-.03em;
+  }
+  #ring-label.badge{font-size:21px;font-weight:700}
+
+  input{
+    width:100%;padding:14px 16px;font-size:17px;border:none;border-radius:12px;
+    background:var(--section);color:var(--fg);outline:none;
+  }
+  input::placeholder{color:var(--hint)}
+  input:focus{box-shadow:inset 0 0 0 2px var(--accent)}
+
+  button{font:inherit;cursor:pointer;border:none;border-radius:12px;color:var(--fg)}
+  .primary{
+    display:block;width:calc(100% - 32px);margin:16px;padding:15px;
+    background:var(--accent);color:var(--accent-fg);font-size:16px;font-weight:600;
+    transition:opacity .15s;
+  }
+  .primary:active{opacity:.75}
+  .primary:disabled{opacity:.45;cursor:default}
+
+  .code-boxes{display:flex;gap:9px;justify-content:center;margin:22px 0 6px}
+  .code-boxes span{
+    width:44px;height:54px;border-radius:10px;background:var(--section);
+    display:flex;align-items:center;justify-content:center;
+    font-size:26px;font-weight:600;font-variant-numeric:tabular-nums;
+    transition:box-shadow .12s;
+  }
+  .code-boxes span.filled{box-shadow:inset 0 0 0 2px var(--accent)}
+
+  .pad{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:16px}
+  .pad button{
+    padding:16px 0;font-size:23px;font-weight:500;background:var(--section);
+    transition:background .12s;
+  }
+  .pad button:active{background:var(--accent);color:var(--accent-fg)}
+  .pad button.wide{font-size:19px}
+  .pad.disabled{pointer-events:none;opacity:.4}
+
+  .status{margin:0 20px;font-size:14px;min-height:19px;text-align:center;line-height:1.4}
+  .status.err{color:var(--destructive)}
+  .status.ok{color:var(--ok)}
+
+  .step{display:none}
+  .step.active{display:block;animation:in .18s ease-out}
+  @keyframes in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+  .note{color:var(--hint);font-size:13px;line-height:1.45;margin:10px 20px 0;text-align:center}
+  .note b{color:var(--fg);font-weight:600}
+</style>
+</head>
+<body>
+
+<!-- Strings the SCRIPT needs live here as data-* rather than in an inline
+     <script> block: the CSP deliberately has no 'unsafe-inline' for scripts
+     (see connect_web/app.py), so a templated JS literal would be blocked. -->
+<div id="connect-data"
+     data-expired="false"
+     data-token="__TOKEN__"
+     data-phone="__PHONE__"
+     data-expires-at="__EXPIRES_AT__"
+     data-ttl-seconds="__TTL_SECONDS__"
+     data-s-code-sending="__WA_CODE_SENDING__"
+     data-s-code-sent="__WA_CODE_SENT__"
+     data-s-code-phone="__WA_CODE_PHONE__"
+     data-s-code-send-failed="__WA_CODE_SEND_FAILED__"
+     data-s-code-expired="__WA_CODE_EXPIRED__"
+     data-s-code-too-short="__WA_CODE_TOO_SHORT__"
+     data-s-code-checking="__WA_CODE_CHECKING__"
+     data-s-resuming="__WA_RESUMING__"
+     data-s-error="__WA_ERROR__"
+     data-s-server-rejected="__WA_SERVER_REJECTED__"
+     data-s-2fa-checking="__WA_2FA_CHECKING__"
+     style="display:none"></div>
+
+<div id="ring-wrap">
+  <svg viewBox="0 0 52 52" aria-hidden="true">
+    <circle class="ring-track" cx="26" cy="26" r="22"></circle>
+    <circle id="ring-arc" class="ring-arc" cx="26" cy="26" r="22"></circle>
+  </svg>
+  <div id="ring-label"></div>
+</div>
+
+<div id="step-outside" class="step">
+  <div class="hero">
+    <div class="glyph warn">🔒</div>
+    <h1>__WA_OUTSIDE_TITLE__</h1>
+    <p>__WA_OUTSIDE_BODY__</p>
+  </div>
+</div>
+
+<div id="step-expired" class="step">
+  <div class="hero">
+    <div class="glyph warn">⏱</div>
+    <h1>__WA_EXPIRED_TITLE__</h1>
+    <p>__WA_EXPIRED_BODY__</p>
+  </div>
+</div>
+
+<div id="step-code" class="step">
+  <div class="hero">
+    <div class="glyph">💬</div>
+    <h1>__WA_CODE_TITLE__</h1>
+    <p id="code-sub"></p>
+  </div>
+  <div class="code-boxes" id="code-boxes">
+    <span></span><span></span><span></span><span></span><span></span>
+  </div>
+  <div id="code-status" class="status"></div>
+  <div class="pad disabled" id="pad">
+    <button data-d="1">1</button><button data-d="2">2</button><button data-d="3">3</button>
+    <button data-d="4">4</button><button data-d="5">5</button><button data-d="6">6</button>
+    <button data-d="7">7</button><button data-d="8">8</button><button data-d="9">9</button>
+    <button id="backspace" class="wide">⌫</button>
+    <button data-d="0">0</button>
+    <button id="submit-code" class="wide">✓</button>
+  </div>
+  <button id="retry-code" class="primary" style="display:none">__WA_CODE_RETRY__</button>
+</div>
+
+<div id="step-2fa" class="step">
+  <div class="hero">
+    <div class="glyph">🔐</div>
+    <h1>__WA_2FA_TITLE__</h1>
+    <p>__WA_2FA_BODY__</p>
+  </div>
+  <div style="padding:0 16px"><input id="password" type="password" placeholder="__WA_2FA_PLACEHOLDER__" autocomplete="current-password"></div>
+  <button id="send-password" class="primary">__WA_2FA_SUBMIT__</button>
+  <div id="pw-status" class="status"></div>
+  <p class="note">__WA_2FA_NOTE__</p>
+</div>
+
+<div id="step-done" class="step">
+  <div class="hero">
+    <div class="glyph done">✓</div>
+    <h1>__WA_DONE_TITLE__</h1>
+    <p>__WA_DONE_BODY__</p>
+  </div>
+  <div id="done-status" class="status ok"></div>
+</div>
+
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="/gramjs.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>
