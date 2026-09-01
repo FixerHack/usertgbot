@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
+from math import ceil
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -189,6 +190,28 @@ async def get_or_create_settings(session: AsyncSession, user_id: int) -> UserSet
         session.add(row)
         await session.flush()
     return row
+
+
+async def peek_send_cooldown(
+    session: AsyncSession, user_id: int, cooldown_seconds: int, *, now: datetime | None = None
+) -> tuple[bool, int]:
+    """Whether .send may run right now, and how many whole seconds remain if
+    not. Per-user (see UserSettings.last_send_at) — the tariff is bought per
+    user, so gating per-session would let someone with two connected phone
+    numbers just alternate between them to dodge the cooldown."""
+    now = now or _utcnow()
+    row = await get_or_create_settings(session, user_id)
+    if row.last_send_at is None:
+        return True, 0
+    elapsed = (now - _as_aware(row.last_send_at)).total_seconds()
+    remaining = cooldown_seconds - elapsed
+    return remaining <= 0, max(0, ceil(remaining))
+
+
+async def mark_send_used(session: AsyncSession, user_id: int, *, now: datetime | None = None) -> None:
+    row = await get_or_create_settings(session, user_id)
+    row.last_send_at = (now or _utcnow()).astimezone(timezone.utc).replace(tzinfo=None)
+    await session.flush()
 
 
 async def set_me_card(session: AsyncSession, user_id: int, card: dict | None) -> UserSettings:

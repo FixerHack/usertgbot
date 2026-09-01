@@ -27,7 +27,9 @@ class TariffPlan:
     profit_uah: int            # guaranteed net profit, in UAH — see shared.pricing
     check_quota: int           # .check uses per calendar month; 0 = none
     has_autoresponder: bool
-    has_send: bool = False      # .send — bulk-post N copies of a message; Pro-only
+    has_send: bool = False      # .send — bulk-post N copies of a message
+    send_cooldown_seconds: int = 0   # min gap between .send runs; meaningless if has_send is False
+    send_max_count: int = 0          # max copies per .send call; meaningless if has_send is False
     features: list[str] = field(default_factory=list)
     available: bool = True     # False => shown as "in development", not purchasable
 
@@ -58,11 +60,13 @@ PLANS: dict[Tariff, TariffPlan] = {
         check_quota=10,
         has_autoresponder=True,
         has_send=True,
+        send_cooldown_seconds=600,   # 10 min
+        send_max_count=50,
         features=[
             "Усе зі Standard",
             ".check — 10/місяць",
             "Автовідповідач (налаштовується)",
-            ".send — масове надсилання (до 100 повідомлень)",
+            ".send — масове надсилання (до 50 повідомлень, раз на 10 хв)",
         ],
     ),
     Tariff.PREMIUM: TariffPlan(
@@ -71,6 +75,9 @@ PLANS: dict[Tariff, TariffPlan] = {
         profit_uah=0,
         check_quota=0,
         has_autoresponder=False,
+        has_send=True,
+        send_cooldown_seconds=120,   # 2 min
+        send_max_count=100,
         features=["🚧 В розробці"],
         available=False,
     ),

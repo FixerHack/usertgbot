@@ -156,3 +156,38 @@ async def test_saved_messages(db_session):
     saved = await queries.list_saved_messages(db_session, user.id)
     assert len(saved) == 2
     assert saved[0].event_type == "edited"  # newest first
+
+
+# --- .send cooldown ----------------------------------------------------------
+
+
+async def test_send_cooldown_allows_a_fresh_user(db_session):
+    user = await _user(db_session)
+    allowed, remaining = await queries.peek_send_cooldown(db_session, user.id, 600)
+    assert allowed is True
+    assert remaining == 0
+
+
+async def test_send_cooldown_blocks_until_it_elapses(db_session):
+    user = await _user(db_session)
+    now = datetime(2026, 9, 2, 12, 0, 0, tzinfo=timezone.utc)
+    await queries.mark_send_used(db_session, user.id, now=now)
+    await db_session.flush()
+
+    still_cooling = await queries.peek_send_cooldown(db_session, user.id, 600, now=now + timedelta(seconds=200))
+    assert still_cooling[0] is False
+    assert still_cooling[1] == 400  # 600 - 200
+
+    just_after = await queries.peek_send_cooldown(db_session, user.id, 600, now=now + timedelta(seconds=601))
+    assert just_after == (True, 0)
+
+
+async def test_send_cooldown_is_per_user(db_session):
+    a = await _user(db_session, telegram_id=2001)
+    b = await _user(db_session, telegram_id=2002)
+    now = datetime(2026, 9, 2, 12, 0, 0, tzinfo=timezone.utc)
+    await queries.mark_send_used(db_session, a.id, now=now)
+    await db_session.flush()
+
+    assert (await queries.peek_send_cooldown(db_session, a.id, 600, now=now + timedelta(seconds=10)))[0] is False
+    assert (await queries.peek_send_cooldown(db_session, b.id, 600, now=now + timedelta(seconds=10)))[0] is True

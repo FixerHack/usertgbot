@@ -46,12 +46,25 @@ def test_command_gating():
     # autoresponder is Pro-only
     assert not tariff_grants_command(Tariff.STANDARD, "autoresponder")
     assert tariff_grants_command(Tariff.PRO, "autoresponder")
-    # .send is Pro-only too
+    # .send: Standard doesn't have it; Pro does (Premium would too, but it's
+    # gated off entirely below since the whole tier isn't purchasable yet)
     assert not tariff_grants_command(Tariff.STANDARD, "send")
     assert tariff_grants_command(Tariff.PRO, "send")
-    # premium grants nothing while unavailable
+    # premium grants nothing while unavailable, even though its plan data
+    # (send_cooldown_seconds etc.) is already filled in for when it launches
     assert not tariff_grants_command(Tariff.PREMIUM, "info")
     assert not tariff_grants_command(Tariff.PREMIUM, "send")
+
+
+def test_send_cooldown_and_limits_per_tariff():
+    pro, premium = get_plan(Tariff.PRO), get_plan(Tariff.PREMIUM)
+    assert pro.send_cooldown_seconds == 10 * 60
+    assert pro.send_max_count == 50
+    # Premium is faster/bigger than Pro, even though it isn't purchasable yet
+    assert premium.send_cooldown_seconds == 2 * 60
+    assert premium.send_max_count == 100
+    assert premium.send_cooldown_seconds < pro.send_cooldown_seconds
+    assert premium.send_max_count > pro.send_max_count
 
 
 def test_durations_defined():

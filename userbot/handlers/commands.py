@@ -11,12 +11,13 @@ import asyncio
 import io
 import logging
 import re
+from math import ceil
 
 from telethon import TelegramClient, errors, events
 from telethon.tl.functions.contacts import BlockRequest
 from telethon.tl.functions.users import GetFullUserRequest
 
-from db.queries import consume_check
+from db.queries import consume_check, mark_send_used, peek_send_cooldown
 from db.session import get_session
 from shared.i18n import t
 from shared.settings_schema import Features, MeCard
@@ -41,9 +42,10 @@ INFO_RE = r"^\.info\s*$"
 ME_RE = r"^\.me\s*$"
 BAN_RE = r"^\.ban\s*$"
 CHECK_RE = r"^\.check\b.*$"
-# .send <1-100> <text> — text can span multiple lines, hence re.DOTALL
+# .send <count> <text> — text can span multiple lines, hence re.DOTALL. The
+# actual max is tariff-dependent (TariffPlan.send_max_count); \d{1,3} just
+# caps the regex itself well above the highest plan's limit.
 SEND_RE = re.compile(r"^\.send\s+(\d{1,3})\s+(.+)$", re.DOTALL)
-_SEND_DELAY_SECONDS = 1.0  # spaced out so N identical sends don't trip Telegram's flood control
 
 
 async def _feature_enabled(ctx: WorkerContext, name: str) -> bool:
@@ -102,10 +104,11 @@ def register(client: TelegramClient, ctx: WorkerContext) -> None:
 
     @client.on(events.NewMessage(outgoing=True, pattern=SEND_RE))
     async def handle_send(event: events.NewMessage.Event) -> None:
-        if not await _gate(event, ctx, "send"):
+        gate = await _gate(event, ctx, "send")
+        if gate is None:
             return
         try:
-            await _do_send(client, event, ctx)
+            await _do_send(client, event, ctx, gate)
         except Exception:
             logger.exception(".send failed")
 
@@ -125,7 +128,7 @@ async def _do_info(client: TelegramClient, event: events.NewMessage.Event, ctx: 
         info = formatting.TargetInfo(
             entity_id=getattr(entity, "id", 0),
             is_chat=False,
-            title_or_name=_full_name(entity),
+            title_or_name=_full_name(entity, ctx.owner_lang),
             username=getattr(entity, "username", None),
             is_premium=bool(getattr(entity, "premium", False)),
             is_verified=bool(getattr(entity, "verified", False)),
@@ -137,11 +140,11 @@ async def _do_info(client: TelegramClient, event: events.NewMessage.Event, ctx: 
         info = formatting.TargetInfo(
             entity_id=getattr(entity, "id", 0),
             is_chat=True,
-            title_or_name=getattr(entity, "title", "чат"),
+            title_or_name=getattr(entity, "title", None) or t(ctx.owner_lang, "ub_entity_chat"),
             username=getattr(entity, "username", None),
             members_count=getattr(entity, "participants_count", None),
         )
-    text = formatting.format_target_info(info)
+    text = formatting.format_target_info(info, ctx.owner_lang)
 
     # Exactly one avatar (the current profile photo), never the whole album.
     photo = await client.download_profile_photo(entity, file=bytes)
@@ -220,14 +223,42 @@ async def _do_check(event: events.NewMessage.Event, ctx: WorkerContext, gate) ->
         await event.respond(note)
 
 
-async def _do_send(client: TelegramClient, event: events.NewMessage.Event, ctx: WorkerContext) -> None:
+async def _notice(client: TelegramClient, chat_id: int, text: str, *, delay: float = 2.0) -> None:
+    """Post a limit/cooldown notice, then remove it — long enough to read,
+    then out of the way instead of piling up as permanent chat clutter."""
+    msg = await client.send_message(chat_id, text)
+    await asyncio.sleep(delay)
+    try:
+        await msg.delete()
+    except Exception:
+        logger.debug(".send notice cleanup skipped", exc_info=True)
+
+
+async def _do_send(client: TelegramClient, event: events.NewMessage.Event, ctx: WorkerContext, gate) -> None:
     count = int(event.pattern_match.group(1))
     text = event.pattern_match.group(2)
-    if not 1 <= count <= 100:
-        await event.reply(t(ctx.owner_lang, "ub_send_bad_count"))
+    plan = get_plan(gate.tariff)
+    chat_id = event.chat_id
+
+    if not 1 <= count <= plan.send_max_count:
+        await _notice(client, chat_id, t(ctx.owner_lang, "ub_send_bad_count", max=plan.send_max_count))
         return
 
-    chat_id = event.chat_id
+    # Per-user, not per-command-invocation: checked (and immediately marked)
+    # BEFORE the send loop so two near-simultaneous .send calls can't both
+    # slip through the gate while the first batch is still sending.
+    async with get_session() as db:
+        allowed, remaining_seconds = await peek_send_cooldown(db, ctx.owner_user_id, plan.send_cooldown_seconds)
+        if not allowed:
+            minutes = max(1, ceil(remaining_seconds / 60))
+            await db.rollback()
+        else:
+            await mark_send_used(db, ctx.owner_user_id)
+            await db.commit()
+    if not allowed:
+        await _notice(client, chat_id, t(ctx.owner_lang, "ub_send_cooldown", minutes=minutes))
+        return
+
     await event.delete()
     for i in range(count):
         try:
@@ -236,8 +267,6 @@ async def _do_send(client: TelegramClient, event: events.NewMessage.Event, ctx: 
             logger.warning(".send stopped early by FloodWaitError (%s of %s sent)", i, count)
             await client.send_message(chat_id, t(ctx.owner_lang, "ub_send_flood_stopped", sent=i, total=count))
             return
-        if i < count - 1:
-            await asyncio.sleep(_SEND_DELAY_SECONDS)
 
 
 # --- helpers ---------------------------------------------------------------
@@ -255,7 +284,7 @@ async def _gate(event: events.NewMessage.Event, ctx: WorkerContext, command: str
     return None
 
 
-def _full_name(entity) -> str:
+def _full_name(entity, lang: str = "uk") -> str:
     parts = [getattr(entity, "first_name", None), getattr(entity, "last_name", None)]
     name = " ".join(p for p in parts if p)
-    return name or getattr(entity, "username", None) or "користувач"
+    return name or getattr(entity, "username", None) or t(lang, "ub_entity_user")
