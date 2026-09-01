@@ -158,6 +158,11 @@ class UserSettings(Base):
     me_card: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
     autoresponder: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
     features: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
+    # Last time .send ran, for the per-tariff cooldown (shared.tariffs
+    # .send_cooldown_seconds). Per-user, not per-session: the tariff is
+    # bought per user, so cooling down per-session would let someone with two
+    # connected phone numbers just alternate between them to dodge it.
+    last_send_at: Mapped[datetime | None] = mapped_column(default=None)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
@@ -218,6 +223,38 @@ class MediaBlob(Base):
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
     owner: Mapped["User"] = relationship()
+
+
+class ConnectToken(Base):
+    """A one-time, short-lived ticket for the browser-based (Mini App) login.
+
+    The server deliberately holds nothing else about an in-progress login —
+    the old LoginManager kept a live Telethon client per user in process
+    memory and lost it on every restart. Here the only server-side state is
+    this row and its TTL; the actual login (GramJS client, phone_code_hash)
+    lives in the browser's localStorage, keyed by `token`, until the session
+    is handed off and the row is consumed.
+    """
+
+    __tablename__ = "connect_tokens"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    token: Mapped[str] = mapped_column(unique=True, index=True)
+    telegram_id: Mapped[int] = mapped_column(BigInteger)
+    chat_id: Mapped[int] = mapped_column(BigInteger)
+    # Filled in after the bot message with the Mini App button is sent (the
+    # id isn't known until Telegram returns it) — lets the button be removed
+    # once the login succeeds, so it can't accidentally be tapped again.
+    message_id: Mapped[int | None] = mapped_column(BigInteger, default=None)
+    phone: Mapped[str] = mapped_column()
+    expires_at: Mapped[datetime] = mapped_column()
+    used_at: Mapped[datetime | None] = mapped_column(default=None)
+    # When the "your link expired, try again in settings" chat message was
+    # sent. Stored rather than kept in memory for the same reason as the rest
+    # of this row: a timer held in the process would silently never fire if
+    # the bot restarted mid-attempt, and the user would just be left waiting.
+    expiry_notified_at: Mapped[datetime | None] = mapped_column(default=None)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
 class IgnoredChat(Base):
