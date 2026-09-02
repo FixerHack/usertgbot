@@ -15,9 +15,9 @@ def main_menu(lang: str = "uk") -> ReplyKeyboardMarkup:
     inline button, so it's intentionally not here."""
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text=t(lang, "btn_subscribe")), KeyboardButton(text=t(lang, "btn_settings"))],
-            [KeyboardButton(text=t(lang, "btn_help")), KeyboardButton(text=t(lang, "btn_support"))],
             [KeyboardButton(text=t(lang, "btn_menu"))],
+            [KeyboardButton(text=t(lang, "btn_subscribe")), KeyboardButton(text=t(lang, "btn_help"))],
+            [KeyboardButton(text=t(lang, "btn_support")), KeyboardButton(text=t(lang, "btn_settings"))],
         ],
         resize_keyboard=True,
     )

@@ -38,14 +38,18 @@ def test_start_text_with_subscription_and_sessions():
     assert "✅ підключено" in text
 
 
+def test_main_menu_layout():
+    """Menu spans the top row on its own; the other four pair up below it."""
+    rows = [[b.text for b in row] for row in keyboards.main_menu("uk").keyboard]
+    assert rows == [
+        [t("uk", "btn_menu")],
+        [t("uk", "btn_subscribe"), t("uk", "btn_help")],
+        [t("uk", "btn_support"), t("uk", "btn_settings")],
+    ]
+
+
 def test_main_menu_has_no_connect_button():
     # account link/unlink lives inside Settings as an inline button, not here
     labels = [b.text for row in keyboards.main_menu("uk").keyboard for b in row]
-    assert labels == [
-        t("uk", "btn_subscribe"),
-        t("uk", "btn_settings"),
-        t("uk", "btn_help"),
-        t("uk", "btn_support"),
-        t("uk", "btn_menu"),
-    ]
     assert not any("Підключити" in label for label in labels)
+    assert not any("Прив" in label for label in labels)

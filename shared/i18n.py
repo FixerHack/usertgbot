@@ -115,46 +115,284 @@ _TR: dict[str, tuple[str, str, str]] = {
         "🔒 Нужна активная подписка",
         "🔒 An active subscription is required",
     ),
-    "help_text": (
-        "❓ <b>Довідка</b>\n\n"
-        "<b>Керуючий бот</b>\n"
-        "• 💳 Тарифи — оформити/змінити підписку\n"
-        "• ⚙️ Налаштування — візитка .me, автовідповідач, керування акаунтом\n"
-        "• 🆘 Підтримка — зв'язок із менеджером\n\n"
-        "<b>Команди в переписках</b> (з підключеного акаунта):\n"
-        "• <code>.info</code> — зводка по юзеру/чату (+ 1 аватарка)\n"
-        "• <code>.me</code> — надіслати свою візитку\n"
-        "• <code>.ban</code> — заблокувати й видалити (в чаті — вийти/бан)\n"
-        "• <code>.check</code> — перевірка (ліміт за тарифом)\n"
-        "• <code>.send N текст</code> — надіслати N копій (1-100, Pro)\n\n"
-        "<b>Менеджер-бот</b> надсилає вам: видалені/змінені повідомлення, "
-        "спрацювання автовідповідача, результати .info/.check, одноразові фото/гс.",
-        "❓ <b>Помощь</b>\n\n"
-        "<b>Управляющий бот</b>\n"
-        "• 💳 Тарифы — оформить/изменить подписку\n"
-        "• ⚙️ Настройки — визитка .me, автоответчик, управление аккаунтом\n"
-        "• 🆘 Поддержка — связь с менеджером\n\n"
-        "<b>Команды в переписках</b> (с подключённого аккаунта):\n"
-        "• <code>.info</code> — сводка по юзеру/чату (+ 1 аватарка)\n"
-        "• <code>.me</code> — отправить свою визитку\n"
-        "• <code>.ban</code> — заблокировать и удалить (в чате — выйти/бан)\n"
-        "• <code>.check</code> — проверка (лимит по тарифу)\n"
-        "• <code>.send N текст</code> — отправить N копий (1-100, Pro)\n\n"
-        "<b>Менеджер-бот</b> присылает вам: удалённые/изменённые сообщения, "
-        "срабатывания автоответчика, результаты .info/.check, одноразовые фото/гс.",
-        "❓ <b>Help</b>\n\n"
+    # --- help: shared sections, reused by every plan's view ---
+    "help_bot_section": (
+        "<b>Керуючий бот</b> (цей чат)\n"
+        "• 🏠 Меню — головний екран: статус підписки й акаунта\n"
+        "• 💳 Тарифи — оформити або змінити підписку\n"
+        "• ⚙️ Налаштування — візитка, автовідповідач, ігноровані чати, мова, керування акаунтом\n"
+        "• 🆘 Підтримка — зв'язок із менеджером",
+        "<b>Управляющий бот</b> (этот чат)\n"
+        "• 🏠 Меню — главный экран: статус подписки и аккаунта\n"
+        "• 💳 Тарифы — оформить или изменить подписку\n"
+        "• ⚙️ Настройки — визитка, автоответчик, игнорируемые чаты, язык, управление аккаунтом\n"
+        "• 🆘 Поддержка — связь с менеджером",
+        "<b>Management bot</b> (this chat)\n"
+        "• 🏠 Menu — home screen: subscription and account status\n"
+        "• 💳 Plans — buy or change your subscription\n"
+        "• ⚙️ Settings — your card, autoresponder, ignored chats, language, account\n"
+        "• 🆘 Support — reach a manager",
+    ),
+    "help_manager_section": (
+        "<b>Менеджер-бот</b>\n"
+        "Окремий бот, куди приходять усі сповіщення: видалені й змінені повідомлення, "
+        "спрацювання автовідповідача, результати <code>.info</code> та <code>.check</code>, "
+        "одноразові фото й голосові. Запустити його — обов'язковий крок після підключення "
+        "акаунта, без цього сповіщень не буде.",
+        "<b>Менеджер-бот</b>\n"
+        "Отдельный бот, куда приходят все уведомления: удалённые и изменённые сообщения, "
+        "срабатывания автоответчика, результаты <code>.info</code> и <code>.check</code>, "
+        "одноразовые фото и голосовые. Запустить его — обязательный шаг после подключения "
+        "аккаунта, без этого уведомлений не будет.",
         "<b>Manager bot</b>\n"
-        "• 💳 Plans — buy/change a subscription\n"
-        "• ⚙️ Settings — .me card, autoresponder, account management\n"
-        "• 🆘 Support — contact the manager\n\n"
-        "<b>In-chat commands</b> (from a connected account):\n"
-        "• <code>.info</code> — user/chat summary (+ 1 avatar)\n"
-        "• <code>.me</code> — send your card\n"
-        "• <code>.ban</code> — block & delete (in a group — leave/ban)\n"
-        "• <code>.check</code> — check (limited by tariff)\n"
-        "• <code>.send N text</code> — send N copies (1-100, Pro)\n\n"
-        "<b>The manager bot</b> forwards you: deleted/edited messages, "
-        "autoresponder hits, .info/.check results, one-time photos/voice.",
+        "A separate bot where every notification arrives: deleted and edited messages, "
+        "autoresponder replies, <code>.info</code> and <code>.check</code> results, "
+        "one-time photos and voice notes. Starting it is a required step after linking "
+        "your account — without it you get no notifications at all.",
+    ),
+    "help_how_commands": (
+        "Команди пишете <b>зі свого підключеного акаунта</b> прямо в переписці, "
+        "а не в цьому чаті.",
+        "Команды пишете <b>со своего подключённого аккаунта</b> прямо в переписке, "
+        "а не в этом чате.",
+        "You type commands <b>from your linked account</b>, right inside a conversation — "
+        "not in this chat.",
+    ),
+    "help_autosave_section": (
+        "<b>Автозбереження</b>\n"
+        "Якщо співрозмовник видалить або змінить повідомлення — копія прийде в менеджер-бот. "
+        "Працює і для медіа: фото, голосові, відео, документи, локації. "
+        "Вмикається окремими перемикачами в ⚙️ Налаштування.",
+        "<b>Автосохранение</b>\n"
+        "Если собеседник удалит или изменит сообщение — копия придёт в менеджер-бот. "
+        "Работает и для медиа: фото, голосовые, видео, документы, локации. "
+        "Включается отдельными переключателями в ⚙️ Настройки.",
+        "<b>Auto-save</b>\n"
+        "If someone deletes or edits a message, a copy lands in your manager bot. "
+        "Works for media too: photos, voice notes, video, documents, locations. "
+        "Toggled per type in ⚙️ Settings.",
+    ),
+    # --- help: one view per plan. {bot}/{manager}/{how}/{autosave} are
+    # filled from the shared sections above, so the wording can't drift
+    # apart between the per-plan views and the full one ---
+    "help_all": (
+        "❓ <b>Довідка — весь функціонал</b>\n"
+        "\n"
+        "{bot}\n"
+        "\n"
+        "{manager}\n"
+        "\n"
+        "<b>Команди в переписках</b>\n"
+        "{how}\n"
+        "• <code>.info</code> — зводка по співрозмовнику або чату + аватарка\n"
+        "• <code>.me</code> — надіслати свою візитку\n"
+        "• <code>.ban</code> — в особистих: заблокувати й видалити; у групі: вийти\n"
+        "• <code>.check</code> — перевірка (ліміт залежить від тарифу)\n"
+        "• <code>.send N текст</code> — надіслати N копій повідомлення\n"
+        "\n"
+        "{autosave}\n"
+        "\n"
+        "<b>Автовідповідач</b>\n"
+        "Автоматична відповідь на вхідні, поки вас немає. Налаштовується в ⚙️ Налаштування.\n"
+        "\n"
+        "<b>Що дає який тариф</b>\n"
+        "• <b>Standard</b> — .info, .me, .ban, .check (5/міс), автозбереження\n"
+        "• <b>Pro</b> — усе зі Standard + .check 10/міс + автовідповідач + .send (до 50 копій, раз на 10 хв)\n"
+        "• <b>Premium</b> — 🚧 у розробці",
+        "❓ <b>Помощь — весь функционал</b>\n"
+        "\n"
+        "{bot}\n"
+        "\n"
+        "{manager}\n"
+        "\n"
+        "<b>Команды в переписках</b>\n"
+        "{how}\n"
+        "• <code>.info</code> — сводка по собеседнику или чату + аватарка\n"
+        "• <code>.me</code> — отправить свою визитку\n"
+        "• <code>.ban</code> — в личных: заблокировать и удалить; в группе: выйти\n"
+        "• <code>.check</code> — проверка (лимит зависит от тарифа)\n"
+        "• <code>.send N текст</code> — отправить N копий сообщения\n"
+        "\n"
+        "{autosave}\n"
+        "\n"
+        "<b>Автоответчик</b>\n"
+        "Автоматический ответ на входящие, пока вас нет. Настраивается в ⚙️ Настройки.\n"
+        "\n"
+        "<b>Что даёт какой тариф</b>\n"
+        "• <b>Standard</b> — .info, .me, .ban, .check (5/мес), автосохранение\n"
+        "• <b>Pro</b> — всё из Standard + .check 10/мес + автоответчик + .send (до 50 копий, раз в 10 мин)\n"
+        "• <b>Premium</b> — 🚧 в разработке",
+        "❓ <b>Help — everything the service does</b>\n"
+        "\n"
+        "{bot}\n"
+        "\n"
+        "{manager}\n"
+        "\n"
+        "<b>In-conversation commands</b>\n"
+        "{how}\n"
+        "• <code>.info</code> — summary of the person or chat + their avatar\n"
+        "• <code>.me</code> — send your own card\n"
+        "• <code>.ban</code> — in DMs: block and delete; in a group: leave\n"
+        "• <code>.check</code> — lookup (allowance depends on your plan)\n"
+        "• <code>.send N text</code> — post N copies of a message\n"
+        "\n"
+        "{autosave}\n"
+        "\n"
+        "<b>Autoresponder</b>\n"
+        "Replies to incoming messages automatically while you're away. Set it up in ⚙️ Settings.\n"
+        "\n"
+        "<b>What each plan includes</b>\n"
+        "• <b>Standard</b> — .info, .me, .ban, .check (5/mo), auto-save\n"
+        "• <b>Pro</b> — everything in Standard + .check 10/mo + autoresponder + .send (up to 50 copies, once per 10 min)\n"
+        "• <b>Premium</b> — 🚧 in development",
+    ),
+    "help_standard": (
+        "❓ <b>Довідка — ваш тариф: Standard</b>\n"
+        "\n"
+        "{bot}\n"
+        "\n"
+        "{manager}\n"
+        "\n"
+        "<b>Ваші команди</b>\n"
+        "{how}\n"
+        "• <code>.info</code> — зводка по співрозмовнику або чату + аватарка\n"
+        "• <code>.me</code> — надіслати свою візитку\n"
+        "• <code>.ban</code> — в особистих: заблокувати й видалити; у групі: вийти\n"
+        "• <code>.check</code> — <b>5 перевірок на місяць</b>, лічильник оновлюється 1-го числа\n"
+        "\n"
+        "{autosave}\n"
+        "\n"
+        "<b>Не входить у Standard</b>\n"
+        "• Автовідповідач — у Pro\n"
+        "• <code>.send</code> — масова розсилка, у Pro\n"
+        "• Більший ліміт <code>.check</code> (10/міс) — у Pro",
+        "❓ <b>Помощь — ваш тариф: Standard</b>\n"
+        "\n"
+        "{bot}\n"
+        "\n"
+        "{manager}\n"
+        "\n"
+        "<b>Ваши команды</b>\n"
+        "{how}\n"
+        "• <code>.info</code> — сводка по собеседнику или чату + аватарка\n"
+        "• <code>.me</code> — отправить свою визитку\n"
+        "• <code>.ban</code> — в личных: заблокировать и удалить; в группе: выйти\n"
+        "• <code>.check</code> — <b>5 проверок в месяц</b>, счётчик обновляется 1-го числа\n"
+        "\n"
+        "{autosave}\n"
+        "\n"
+        "<b>Не входит в Standard</b>\n"
+        "• Автоответчик — в Pro\n"
+        "• <code>.send</code> — массовая рассылка, в Pro\n"
+        "• Больший лимит <code>.check</code> (10/мес) — в Pro",
+        "❓ <b>Help — your plan: Standard</b>\n"
+        "\n"
+        "{bot}\n"
+        "\n"
+        "{manager}\n"
+        "\n"
+        "<b>Your commands</b>\n"
+        "{how}\n"
+        "• <code>.info</code> — summary of the person or chat + their avatar\n"
+        "• <code>.me</code> — send your own card\n"
+        "• <code>.ban</code> — in DMs: block and delete; in a group: leave\n"
+        "• <code>.check</code> — <b>5 lookups per month</b>, resets on the 1st\n"
+        "\n"
+        "{autosave}\n"
+        "\n"
+        "<b>Not included in Standard</b>\n"
+        "• Autoresponder — Pro\n"
+        "• <code>.send</code> — bulk send, Pro\n"
+        "• A bigger <code>.check</code> allowance (10/mo) — Pro",
+    ),
+    "help_pro": (
+        "❓ <b>Довідка — ваш тариф: Pro</b>\n"
+        "\n"
+        "{bot}\n"
+        "\n"
+        "{manager}\n"
+        "\n"
+        "<b>Ваші команди</b>\n"
+        "{how}\n"
+        "• <code>.info</code> — зводка по співрозмовнику або чату + аватарка\n"
+        "• <code>.me</code> — надіслати свою візитку\n"
+        "• <code>.ban</code> — в особистих: заблокувати й видалити; у групі: вийти\n"
+        "• <code>.check</code> — <b>10 перевірок на місяць</b>, лічильник оновлюється 1-го числа\n"
+        "• <code>.send N текст</code> — <b>до 50 копій за раз, раз на 10 хвилин</b>. Якщо Telegram тимчасово обмежить надсилання, бот зупиниться і напише, скільки встиг.\n"
+        "\n"
+        "{autosave}\n"
+        "\n"
+        "<b>Автовідповідач</b>\n"
+        "Автоматична відповідь на вхідні, поки вас немає: текст, фото, кнопки-посилання, часове вікно й винятки — усе в ⚙️ Налаштування. Кожне спрацювання дублюється вам у менеджер-бот.",
+        "❓ <b>Помощь — ваш тариф: Pro</b>\n"
+        "\n"
+        "{bot}\n"
+        "\n"
+        "{manager}\n"
+        "\n"
+        "<b>Ваши команды</b>\n"
+        "{how}\n"
+        "• <code>.info</code> — сводка по собеседнику или чату + аватарка\n"
+        "• <code>.me</code> — отправить свою визитку\n"
+        "• <code>.ban</code> — в личных: заблокировать и удалить; в группе: выйти\n"
+        "• <code>.check</code> — <b>10 проверок в месяц</b>, счётчик обновляется 1-го числа\n"
+        "• <code>.send N текст</code> — <b>до 50 копий за раз, раз в 10 минут</b>. Если Telegram временно ограничит отправку, бот остановится и напишет, сколько успел.\n"
+        "\n"
+        "{autosave}\n"
+        "\n"
+        "<b>Автоответчик</b>\n"
+        "Автоматический ответ на входящие, пока вас нет: текст, фото, кнопки-ссылки, временное окно и исключения — всё в ⚙️ Настройки. Каждое срабатывание дублируется вам в менеджер-бот.",
+        "❓ <b>Help — your plan: Pro</b>\n"
+        "\n"
+        "{bot}\n"
+        "\n"
+        "{manager}\n"
+        "\n"
+        "<b>Your commands</b>\n"
+        "{how}\n"
+        "• <code>.info</code> — summary of the person or chat + their avatar\n"
+        "• <code>.me</code> — send your own card\n"
+        "• <code>.ban</code> — in DMs: block and delete; in a group: leave\n"
+        "• <code>.check</code> — <b>10 lookups per month</b>, resets on the 1st\n"
+        "• <code>.send N text</code> — <b>up to 50 copies at a time, once every 10 minutes</b>. If Telegram throttles sending, the bot stops and tells you how many went out.\n"
+        "\n"
+        "{autosave}\n"
+        "\n"
+        "<b>Autoresponder</b>\n"
+        "Replies to incoming messages while you're away: text, photo, link buttons, a time window and exceptions — all in ⚙️ Settings. Every reply is also copied to your manager bot.",
+    ),
+    "help_premium": (
+        "❓ <b>Довідка — ваш тариф: Premium</b>\n"
+        "\n"
+        "🚧 <b>Тариф ще в розробці.</b> Команди за ним поки не активовані. Якщо вам видали Premium — напишіть у 🆘 Підтримку, щоб вам тимчасово підключили Pro.\n"
+        "\n"
+        "{bot}\n"
+        "\n"
+        "{manager}",
+        "❓ <b>Помощь — ваш тариф: Premium</b>\n"
+        "\n"
+        "🚧 <b>Тариф ещё в разработке.</b> Команды по нему пока не активированы. Если вам выдали Premium — напишите в 🆘 Поддержку, чтобы вам временно подключили Pro.\n"
+        "\n"
+        "{bot}\n"
+        "\n"
+        "{manager}",
+        "❓ <b>Help — your plan: Premium</b>\n"
+        "\n"
+        "🚧 <b>This plan is still in development.</b> Its commands aren't active yet. If you were given Premium, message 🆘 Support so they can put you on Pro in the meantime.\n"
+        "\n"
+        "{bot}\n"
+        "\n"
+        "{manager}",
+    ),
+    "help_btn_all": (
+        "📖 Показати весь функціонал",
+        "📖 Показать весь функционал",
+        "📖 Show everything",
+    ),
+    "help_btn_mine": (
+        "🎯 Функціонал моєї підписки",
+        "🎯 Функционал моей подписки",
+        "🎯 What my plan includes",
     ),
     "support_text": (
         "🆘 <b>Підтримка</b>\n\nЗ питань — {contact}",
