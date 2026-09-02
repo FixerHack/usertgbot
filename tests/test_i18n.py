@@ -98,3 +98,27 @@ def test_new_miniapp_and_info_keys_are_translated():
     assert i18n.t("ru", "wa_done_title") == "Аккаунт подключён"
     assert i18n.t("en", "ub_info_no_username") == "🔗 no username"
     assert i18n.t("ru", "adm_stopped").startswith("🛑")
+
+
+def test_every_plan_has_localized_feature_bullets():
+    """The bullets shown on a tariff card come from here alone. They used to be
+    duplicated as an untranslated list on TariffPlan that nothing read — two
+    lists to keep in sync, one of them invisible."""
+    from shared.tariffs import PLANS, get_plan
+
+    for tariff in PLANS:
+        plan_id = get_plan(tariff).id
+        for lang in ("uk", "ru", "en"):
+            bullets = i18n.features(lang, plan_id)
+            assert bullets, f"{plan_id}/{lang} has no feature bullets"
+        uk, en = i18n.features("uk", plan_id), i18n.features("en", plan_id)
+        assert uk != en, f"{plan_id} feature bullets look untranslated"
+
+
+def test_tariff_plan_carries_no_display_strings():
+    """Guards the drift that was just removed: plan data is numbers and flags,
+    the words live here."""
+    from shared.tariffs import get_plan
+
+    plan = get_plan("pro")
+    assert not hasattr(plan, "features")

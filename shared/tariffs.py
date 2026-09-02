@@ -11,7 +11,7 @@ method or the exchange rate.
 from __future__ import annotations
 
 import enum
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 class Tariff(str, enum.Enum):
@@ -30,8 +30,12 @@ class TariffPlan:
     has_send: bool = False      # .send — bulk-post N copies of a message
     send_cooldown_seconds: int = 0   # min gap between .send runs; meaningless if has_send is False
     send_max_count: int = 0          # max copies per .send call; meaningless if has_send is False
-    features: list[str] = field(default_factory=list)
     available: bool = True     # False => shown as "in development", not purchasable
+
+    # NOTE: the human-readable feature bullets live in shared.i18n._FEATURES,
+    # not here. They used to be duplicated on this dataclass in Ukrainian only,
+    # which nothing ever read — two lists to keep in sync and only one of them
+    # ever shown to a client.
 
     @property
     def id(self) -> str:
@@ -45,13 +49,6 @@ PLANS: dict[Tariff, TariffPlan] = {
         profit_uah=50,
         check_quota=5,
         has_autoresponder=False,
-        features=[
-            ".info — зводка по юзеру/чату",
-            ".me — власна візитка",
-            ".ban — бан + видалення",
-            ".check — 5/місяць",
-            "Автозбереження видалених/змінених повідомлень",
-        ],
     ),
     Tariff.PRO: TariffPlan(
         tariff=Tariff.PRO,
@@ -62,12 +59,6 @@ PLANS: dict[Tariff, TariffPlan] = {
         has_send=True,
         send_cooldown_seconds=600,   # 10 min
         send_max_count=50,
-        features=[
-            "Усе зі Standard",
-            ".check — 10/місяць",
-            "Автовідповідач (налаштовується)",
-            ".send — масове надсилання (до 50 повідомлень, раз на 10 хв)",
-        ],
     ),
     Tariff.PREMIUM: TariffPlan(
         tariff=Tariff.PREMIUM,
@@ -78,12 +69,6 @@ PLANS: dict[Tariff, TariffPlan] = {
         has_send=True,
         send_cooldown_seconds=120,   # 2 min
         send_max_count=100,
-        features=[
-            "Усе з Pro",
-            ".check — 30/місяць",
-            ".send — до 100 повідомлень, раз на 2 хв",
-            "Автовідповідач (налаштовується)",
-        ],
     ),
 }
 

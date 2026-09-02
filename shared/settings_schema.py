@@ -30,6 +30,15 @@ class LinkButton:
         return cls(text=d["text"], url=d["url"])
 
 
+# Telegram only renders these schemes as real links; anything else becomes a
+# text entity with a junk URL that the API rejects, and the send fails.
+ALLOWED_URL_SCHEMES = ("http://", "https://", "tg://")
+
+
+def is_valid_url(value: str | None) -> bool:
+    return bool(value) and value.strip().startswith(ALLOWED_URL_SCHEMES)
+
+
 def parse_buttons(raw: str) -> list[LinkButton]:
     """Parse one `Label | https://url` per line; ignores blanks/malformed."""
     buttons: list[LinkButton] = []
@@ -38,7 +47,7 @@ def parse_buttons(raw: str) -> list[LinkButton]:
             continue
         label, _, url = line.partition("|")
         label, url = label.strip(), url.strip()
-        if label and url.startswith(("http://", "https://", "tg://")):
+        if label and is_valid_url(url):
             buttons.append(LinkButton(text=label[:64], url=url))
         if len(buttons) >= MAX_BUTTONS:
             break

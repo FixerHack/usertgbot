@@ -63,3 +63,29 @@ def test_autoresponder_window_wraps_midnight():
     assert autoresponder_should_fire(ar, now=datetime(2026, 1, 1, 23, 0), sender_id=1, is_private=True)
     assert autoresponder_should_fire(ar, now=datetime(2026, 1, 1, 3, 0), sender_id=1, is_private=True)
     assert not autoresponder_should_fire(ar, now=datetime(2026, 1, 1, 12, 0), sender_id=1, is_private=True)
+
+
+# --- URL validation ----------------------------------------------------------
+
+
+def test_only_renderable_schemes_are_accepted():
+    """Telegram renders only these as links. Anything else becomes a text
+    entity carrying a junk URL, and the send fails — which for `.me` means it
+    silently does nothing inside a chat with a client."""
+    from shared.settings_schema import is_valid_url
+
+    for good in ("http://x.com", "https://t.me/x", "tg://resolve?domain=x"):
+        assert is_valid_url(good), good
+    for bad in ("не посилання", "javascript:alert(1)", "ftp://x", "data:text/html,x", "", None):
+        assert not is_valid_url(bad), bad
+
+
+def test_buttons_and_the_card_link_share_one_rule():
+    """They were validated differently once: buttons checked the scheme, the
+    card link accepted anything."""
+    from shared.settings_schema import is_valid_url, parse_buttons
+
+    assert parse_buttons("Label | javascript:alert(1)") == []
+    assert not is_valid_url("javascript:alert(1)")
+    assert len(parse_buttons("Label | https://ok.test")) == 1
+    assert is_valid_url("https://ok.test")

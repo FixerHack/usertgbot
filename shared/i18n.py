@@ -438,6 +438,17 @@ _TR: dict[str, tuple[str, str, str]] = {
         "🆘 <b>Поддержка</b>\n\nПо вопросам — {contact}",
         "🆘 <b>Support</b>\n\nContact — {contact}",
     ),
+    # Stand-in for the manager bot's @username when MANAGER_BOT_USERNAME
+    # isn't configured — the hint still has to name it in the user's language.
+    "me_link_invalid": (
+        "❌ Посилання має починатися з http://, https:// або tg://\n"
+        "Спробуйте ще раз або надішліть «-», щоб прибрати.",
+        "❌ Ссылка должна начинаться с http://, https:// или tg://\n"
+        "Попробуйте ещё раз или отправьте «-», чтобы убрать.",
+        "❌ A link must start with http://, https:// or tg://\n"
+        "Try again, or send «-» to remove it.",
+    ),
+    "manager_bot_generic": ("менеджер-бот", "менеджер-бот", "the manager bot"),
     "start_manager_hint": (
         "❗️ <b>Обов'язковий останній крок</b>\n\nЗапустіть менеджер-бота {manager} — саме туди приходитимуть усі сповіщення (видалені/змінені повідомлення, автовідповідач тощо). Без цього кроку сповіщень не буде.",
         "❗️ <b>Обязательный последний шаг</b>\n\nЗапустите менеджер-бота {manager} — именно туда будут приходить все уведомления (удалённые/изменённые сообщения, автоответчик и т.д.). Без этого шага уведомлений не будет.",

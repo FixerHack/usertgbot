@@ -16,7 +16,14 @@ from management_bot import keyboards, storage
 from management_bot.handlers import connect
 from management_bot.storage import upsert_user
 from shared.i18n import lang_of, t
-from shared.settings_schema import Autoresponder, Features, MeCard, parse_buttons, parse_hhmm
+from shared.settings_schema import (
+    Autoresponder,
+    Features,
+    MeCard,
+    is_valid_url,
+    parse_buttons,
+    parse_hhmm,
+)
 from shared.tariffs import Tariff, get_plan
 
 logger = logging.getLogger(__name__)
@@ -381,6 +388,12 @@ async def set_me_text(message: Message, state: FSMContext) -> None:
 async def set_me_link(message: Message, state: FSMContext) -> None:
     lang = lang_of(message)
     value = None if message.text.strip() == "-" else message.text.strip()
+    # Validated here rather than at render time: an unusable link makes .me
+    # fail inside a chat with a client, and that failure is only logged — the
+    # owner would never learn why their card stopped working.
+    if value is not None and not is_valid_url(value):
+        await message.answer(t(lang, "me_link_invalid"))
+        return
     async with get_session() as db:
         uid, card = await _load_me(db, message.chat.id)
         card.link = value

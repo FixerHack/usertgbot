@@ -408,7 +408,7 @@ async def _persist_and_finish(message: Message, state: FSMContext, result, lang:
         )
         await message.answer(t(lang, "start_manager_hint", manager=manager), reply_markup=kb)
     else:
-        await message.answer(t(lang, "start_manager_hint", manager="менеджер-бот"))
+        await message.answer(t(lang, "start_manager_hint", manager=t(lang, "manager_bot_generic")))
 
 
 async def _render_code(callback: CallbackQuery, code: str) -> None:
