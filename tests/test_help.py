@@ -102,12 +102,16 @@ def test_pro_view_states_the_real_send_limits():
     assert str(pro_plan.check_quota) in rendered
 
 
-def test_premium_view_does_not_promise_what_it_cannot_do():
-    """Premium is grantable from the admin panel but `available=False` gates
-    every command off, so its help must not read like a working plan."""
-    assert not tariff_grants_command(Tariff.PREMIUM, "info")
+def test_premium_view_states_the_real_limits():
+    """Premium went live; its help must describe the plan that actually
+    exists, not the in-development placeholder it used to be."""
+    plan = get_plan(Tariff.PREMIUM)
     rendered = help_handlers._render("uk", "help_premium")
-    assert "🚧" in rendered
+    assert "🚧" not in rendered, "still reads as in-development"
+    assert str(plan.send_max_count) in rendered
+    assert str(plan.send_cooldown_seconds // 60) in rendered
+    assert str(plan.check_quota) in rendered
+    assert tariff_grants_command(Tariff.PREMIUM, "send")
 
 
 # --- plan selection ----------------------------------------------------------

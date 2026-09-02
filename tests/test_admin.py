@@ -148,10 +148,9 @@ async def test_grant_unknown_tariff(db_session):
         await service.grant_subscription(db_session, 2001, "gold")
 
 
-async def test_grant_premium_bypasses_availability_gate(db_session):
-    # Premium is `available=False` (not purchasable via /subscribe), but
-    # admin-granting it must still work — grant_subscription has no such
-    # check, unlike the regular purchase flow.
+async def test_grant_premium_from_the_panel(db_session):
+    # grant_subscription deliberately has no availability check (unlike the
+    # purchase flow), so an admin can hand out a plan that isn't on sale.
     sub = await service.grant_subscription(db_session, 2002, "premium", days=30, now=NOW)
     assert sub.status == SubscriptionStatus.ACTIVE
     rows = await service.list_users(db_session, tariff="premium", now=NOW)

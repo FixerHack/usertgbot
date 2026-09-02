@@ -21,17 +21,26 @@ def test_all_tariffs_defined():
 def test_quotas():
     assert get_plan(Tariff.STANDARD).check_quota == 5
     assert get_plan(Tariff.PRO).check_quota == 10
+    assert get_plan(Tariff.PREMIUM).check_quota == 30
 
 
 def test_profit_targets():
     assert get_plan(Tariff.STANDARD).profit_uah == 50
     assert get_plan(Tariff.PRO).profit_uah == 150
+    assert get_plan(Tariff.PREMIUM).profit_uah == 500
 
 
-def test_premium_not_purchasable():
-    assert get_plan(Tariff.PREMIUM).available is False
+def test_all_three_plans_are_purchasable():
+    assert get_plan(Tariff.PREMIUM).available is True
     ids = {p.id for p in purchasable_plans()}
-    assert ids == {"standard", "pro"}
+    assert ids == {"standard", "pro", "premium"}
+
+
+def test_premium_is_priced_above_pro():
+    """A plan at profit_uah=0 would be handed out free — Premium sat at 0 the
+    whole time it was `available=False`, so this guards the day it flipped."""
+    premium, pro = get_plan(Tariff.PREMIUM), get_plan(Tariff.PRO)
+    assert premium.profit_uah > pro.profit_uah > 0
 
 
 def test_get_plan_accepts_string():
@@ -46,21 +55,37 @@ def test_command_gating():
     # autoresponder is Pro-only
     assert not tariff_grants_command(Tariff.STANDARD, "autoresponder")
     assert tariff_grants_command(Tariff.PRO, "autoresponder")
-    # .send: Standard doesn't have it; Pro does (Premium would too, but it's
-    # gated off entirely below since the whole tier isn't purchasable yet)
+    # .send: Standard doesn't have it; Pro and Premium do
     assert not tariff_grants_command(Tariff.STANDARD, "send")
     assert tariff_grants_command(Tariff.PRO, "send")
-    # premium grants nothing while unavailable, even though its plan data
-    # (send_cooldown_seconds etc.) is already filled in for when it launches
-    assert not tariff_grants_command(Tariff.PREMIUM, "info")
-    assert not tariff_grants_command(Tariff.PREMIUM, "send")
+    # Premium is live now and grants everything
+    for cmd in ("info", "me", "ban", "check", "send", "autoresponder"):
+        assert tariff_grants_command(Tariff.PREMIUM, cmd), cmd
+
+
+def test_an_unavailable_plan_still_grants_nothing():
+    """The availability gate is what kept Premium's commands off before it
+    launched; it stays live code, so keep it covered."""
+    import dataclasses
+
+    shelved = dataclasses.replace(get_plan(Tariff.PRO), available=False)
+    assert shelved.has_send and shelved.has_autoresponder
+    from shared import tariffs as mod
+
+    original = mod.PLANS[Tariff.PRO]
+    mod.PLANS[Tariff.PRO] = shelved
+    try:
+        for cmd in ("info", "send", "autoresponder"):
+            assert not tariff_grants_command(Tariff.PRO, cmd), cmd
+    finally:
+        mod.PLANS[Tariff.PRO] = original
 
 
 def test_send_cooldown_and_limits_per_tariff():
     pro, premium = get_plan(Tariff.PRO), get_plan(Tariff.PREMIUM)
     assert pro.send_cooldown_seconds == 10 * 60
     assert pro.send_max_count == 50
-    # Premium is faster/bigger than Pro, even though it isn't purchasable yet
+    # Premium is faster and bigger than Pro
     assert premium.send_cooldown_seconds == 2 * 60
     assert premium.send_max_count == 100
     assert premium.send_cooldown_seconds < pro.send_cooldown_seconds

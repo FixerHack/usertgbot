@@ -40,10 +40,27 @@ async def test_purchase_normalizes_aware_now_to_naive(db_session):
     assert sub.expires_at.tzinfo is None
 
 
-async def test_purchase_premium_rejected(db_session):
+async def test_purchase_premium_now_succeeds(db_session):
+    """Premium used to be rejected as not-purchasable; it went live with a
+    real price, so buying it must work like any other plan."""
+    sub = await subscriptions.purchase(
+        db_session, telegram_id=1001, tariff=Tariff.PREMIUM, provider=StubPayment()
+    )
+    assert sub.tariff == "premium"
+
+
+async def test_purchasing_an_unavailable_plan_is_still_rejected(db_session, monkeypatch):
+    """The guard stays live code even with every plan currently available."""
+    import dataclasses
+
+    from shared import tariffs as mod
+
+    monkeypatch.setitem(
+        mod.PLANS, Tariff.PREMIUM, dataclasses.replace(mod.PLANS[Tariff.PREMIUM], available=False)
+    )
     with pytest.raises(ValueError):
         await subscriptions.purchase(
-            db_session, telegram_id=1001, tariff=Tariff.PREMIUM, provider=StubPayment()
+            db_session, telegram_id=1002, tariff=Tariff.PREMIUM, provider=StubPayment()
         )
 
 

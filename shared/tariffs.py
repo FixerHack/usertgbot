@@ -72,14 +72,18 @@ PLANS: dict[Tariff, TariffPlan] = {
     Tariff.PREMIUM: TariffPlan(
         tariff=Tariff.PREMIUM,
         title="Premium",
-        profit_uah=0,
-        check_quota=0,
-        has_autoresponder=False,
+        profit_uah=500,
+        check_quota=30,
+        has_autoresponder=True,
         has_send=True,
         send_cooldown_seconds=120,   # 2 min
         send_max_count=100,
-        features=["🚧 В розробці"],
-        available=False,
+        features=[
+            "Усе з Pro",
+            ".check — 30/місяць",
+            ".send — до 100 повідомлень, раз на 2 хв",
+            "Автовідповідач (налаштовується)",
+        ],
     ),
 }
 

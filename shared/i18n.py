@@ -198,7 +198,7 @@ _TR: dict[str, tuple[str, str, str]] = {
         "<b>Що дає який тариф</b>\n"
         "• <b>Standard</b> — .info, .me, .ban, .check (5/міс), автозбереження\n"
         "• <b>Pro</b> — усе зі Standard + .check 10/міс + автовідповідач + .send (до 50 копій, раз на 10 хв)\n"
-        "• <b>Premium</b> — 🚧 у розробці",
+        "• <b>Premium</b> — усе з Pro + .check 30/міс + .send (до 100 копій, раз на 2 хв)",
         "❓ <b>Помощь — весь функционал</b>\n"
         "\n"
         "{bot}\n"
@@ -221,7 +221,7 @@ _TR: dict[str, tuple[str, str, str]] = {
         "<b>Что даёт какой тариф</b>\n"
         "• <b>Standard</b> — .info, .me, .ban, .check (5/мес), автосохранение\n"
         "• <b>Pro</b> — всё из Standard + .check 10/мес + автоответчик + .send (до 50 копий, раз в 10 мин)\n"
-        "• <b>Premium</b> — 🚧 в разработке",
+        "• <b>Premium</b> — всё из Pro + .check 30/мес + .send (до 100 копий, раз в 2 мин)",
         "❓ <b>Help — everything the service does</b>\n"
         "\n"
         "{bot}\n"
@@ -244,7 +244,7 @@ _TR: dict[str, tuple[str, str, str]] = {
         "<b>What each plan includes</b>\n"
         "• <b>Standard</b> — .info, .me, .ban, .check (5/mo), auto-save\n"
         "• <b>Pro</b> — everything in Standard + .check 10/mo + autoresponder + .send (up to 50 copies, once per 10 min)\n"
-        "• <b>Premium</b> — 🚧 in development",
+        "• <b>Premium</b> — everything in Pro + .check 30/mo + .send (up to 100 copies, once per 2 min)",
     ),
     "help_standard": (
         "❓ <b>Довідка — ваш тариф: Standard</b>\n"
@@ -364,25 +364,64 @@ _TR: dict[str, tuple[str, str, str]] = {
     "help_premium": (
         "❓ <b>Довідка — ваш тариф: Premium</b>\n"
         "\n"
-        "🚧 <b>Тариф ще в розробці.</b> Команди за ним поки не активовані. Якщо вам видали Premium — напишіть у 🆘 Підтримку, щоб вам тимчасово підключили Pro.\n"
-        "\n"
         "{bot}\n"
         "\n"
-        "{manager}",
+        "{manager}\n"
+        "\n"
+        "<b>Ваші команди</b>\n"
+        "{how}\n"
+        "• <code>.info</code> — зводка по співрозмовнику або чату + аватарка\n"
+        "• <code>.me</code> — надіслати свою візитку\n"
+        "• <code>.ban</code> — в особистих: заблокувати й видалити; у групі: вийти\n"
+        "• <code>.check</code> — <b>30 перевірок на місяць</b>, лічильник оновлюється 1-го числа\n"
+        "• <code>.send N текст</code> — <b>до 100 копій за раз, раз на 2 хвилини</b>. Якщо Telegram тимчасово обмежить надсилання, бот зупиниться і напише, скільки встиг.\n"
+        "\n"
+        "{autosave}\n"
+        "\n"
+        "<b>Автовідповідач</b>\n"
+        "Автоматична відповідь на вхідні, поки вас немає: текст, фото, кнопки-посилання, часове вікно й винятки — усе в ⚙️ Налаштування. Кожне спрацювання дублюється вам у менеджер-бот.\n"
+        "\n"
+        "Premium — найповніший тариф: усе з Pro, але втричі більший ліміт <code>.check</code>, удвічі більша розсилка і вп'ятеро коротший інтервал між нею.",
         "❓ <b>Помощь — ваш тариф: Premium</b>\n"
         "\n"
-        "🚧 <b>Тариф ещё в разработке.</b> Команды по нему пока не активированы. Если вам выдали Premium — напишите в 🆘 Поддержку, чтобы вам временно подключили Pro.\n"
-        "\n"
         "{bot}\n"
         "\n"
-        "{manager}",
+        "{manager}\n"
+        "\n"
+        "<b>Ваши команды</b>\n"
+        "{how}\n"
+        "• <code>.info</code> — сводка по собеседнику или чату + аватарка\n"
+        "• <code>.me</code> — отправить свою визитку\n"
+        "• <code>.ban</code> — в личных: заблокировать и удалить; в группе: выйти\n"
+        "• <code>.check</code> — <b>30 проверок в месяц</b>, счётчик обновляется 1-го числа\n"
+        "• <code>.send N текст</code> — <b>до 100 копий за раз, раз в 2 минуты</b>. Если Telegram временно ограничит отправку, бот остановится и напишет, сколько успел.\n"
+        "\n"
+        "{autosave}\n"
+        "\n"
+        "<b>Автоответчик</b>\n"
+        "Автоматический ответ на входящие, пока вас нет: текст, фото, кнопки-ссылки, временное окно и исключения — всё в ⚙️ Настройки. Каждое срабатывание дублируется вам в менеджер-бот.\n"
+        "\n"
+        "Premium — самый полный тариф: всё из Pro, но втрое больший лимит <code>.check</code>, вдвое большая рассылка и в пять раз более короткий интервал между ней.",
         "❓ <b>Help — your plan: Premium</b>\n"
         "\n"
-        "🚧 <b>This plan is still in development.</b> Its commands aren't active yet. If you were given Premium, message 🆘 Support so they can put you on Pro in the meantime.\n"
-        "\n"
         "{bot}\n"
         "\n"
-        "{manager}",
+        "{manager}\n"
+        "\n"
+        "<b>Your commands</b>\n"
+        "{how}\n"
+        "• <code>.info</code> — summary of the person or chat + their avatar\n"
+        "• <code>.me</code> — send your own card\n"
+        "• <code>.ban</code> — in DMs: block and delete; in a group: leave\n"
+        "• <code>.check</code> — <b>30 lookups per month</b>, resets on the 1st\n"
+        "• <code>.send N text</code> — <b>up to 100 copies at a time, once every 2 minutes</b>. If Telegram throttles sending, the bot stops and tells you how many went out.\n"
+        "\n"
+        "{autosave}\n"
+        "\n"
+        "<b>Autoresponder</b>\n"
+        "Replies to incoming messages while you're away: text, photo, link buttons, a time window and exceptions — all in ⚙️ Settings. Every reply is also copied to your manager bot.\n"
+        "\n"
+        "Premium is the fullest plan: everything in Pro, with three times the <code>.check</code> allowance, twice the bulk-send size and a five times shorter gap between sends.",
     ),
     "help_btn_all": (
         "📖 Показати весь функціонал",
@@ -907,8 +946,8 @@ _FEATURES: dict[str, tuple[list[str], list[str], list[str]]] = {
         ["Everything in Standard", ".check — 10/month", "Autoresponder (configurable)", ".send — bulk send (up to 50 messages, once per 10 min)"],
     ),
     "premium": (
-        ["🚧 В розробці"],
-        ["🚧 В разработке"],
-        ["🚧 In development"],
+        ["Усе з Pro", ".check — 30/місяць", ".send — до 100 повідомлень, раз на 2 хв", "Автовідповідач (налаштовується)"],
+        ["Всё из Pro", ".check — 30/месяц", ".send — до 100 сообщений, раз в 2 мин", "Автоответчик (настраивается)"],
+        ["Everything in Pro", ".check — 30/month", ".send — up to 100 messages, once per 2 min", "Autoresponder (configurable)"],
     ),
 }

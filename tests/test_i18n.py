@@ -40,7 +40,7 @@ def test_variants_covers_all_languages():
 def test_features_localized():
     assert i18n.features("uk", "pro")[0] == "Усе зі Standard"
     assert i18n.features("en", "pro")[0] == "Everything in Standard"
-    assert i18n.features("ru", "premium") == ["🚧 В разработке"]
+    assert i18n.features("ru", "premium")[0] == "Всё из Pro"
 
 
 def test_every_key_has_all_three_languages():
