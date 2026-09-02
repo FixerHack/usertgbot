@@ -90,12 +90,31 @@ async def deactivate_user_sessions(session: AsyncSession, user_id: int) -> int:
     return len(rows)
 
 
-async def deactivate_session(session: AsyncSession, session_id: int) -> None:
+async def deactivate_session(
+    session: AsyncSession, session_id: int, *, only_if_session_is: bytes | None = None
+) -> bool:
+    """Deactivate a session; returns whether it actually happened.
+
+    `only_if_session_is` guards a real production race: save_session upserts
+    onto the SAME row when an account is re-linked, so a worker still holding
+    the OLD (now revoked) key would otherwise deactivate a row that already
+    contains the user's BRAND NEW, working session — leaving them "not
+    connected" seconds after a successful login.
+
+    Guarded on the stored ciphertext, not on updated_at: SQLite's
+    CURRENT_TIMESTAMP only has second resolution, so a re-link within the same
+    second as the original save would compare equal and the guard would pass
+    when it must not (caught by the tests for exactly this).
+    """
     result = await session.execute(select(Session).where(Session.id == session_id))
     row = result.scalar_one_or_none()
-    if row is not None:
-        row.is_active = False
-        await session.flush()
+    if row is None:
+        return False
+    if only_if_session_is is not None and row.encrypted_session != only_if_session_is:
+        return False
+    row.is_active = False
+    await session.flush()
+    return True
 
 
 # --- subscriptions ---------------------------------------------------------

@@ -53,7 +53,9 @@ def _relink_keyboard(lang: str) -> InlineKeyboardMarkup | None:
     )
 
 
-async def _mark_session_dead(ctx: WorkerContext, session_id: int, lang: str, reason: str) -> None:
+async def _mark_session_dead(
+    ctx: WorkerContext, session_id: int, lang: str, reason: str, session_blob: bytes | None = None
+) -> None:
     """Deactivate the session and tell the owner, exactly once.
 
     Via the MAIN bot, not `notify_owner`'s manager bot: everything else this
@@ -64,8 +66,18 @@ async def _mark_session_dead(ctx: WorkerContext, session_id: int, lang: str, rea
     """
     logger.warning("session_id=%s is dead (%s); deactivating", session_id, reason)
     async with get_session() as db:
-        await deactivate_session(db, session_id)
+        deactivated = await deactivate_session(db, session_id, only_if_session_is=session_blob)
         await db.commit()
+    if not deactivated:
+        # The row was re-saved while this worker was running: the account has
+        # already been re-linked and the row now holds a NEWER, working
+        # session. Deactivating it here would strand a login the user just
+        # completed — and telling them it died would be flatly wrong.
+        logger.info(
+            "session_id=%s was re-linked while this worker ran; leaving the new session alone",
+            session_id,
+        )
+        return
     notifier = ManagerNotifier(settings.bot_token)
     try:
         await notifier.send_text(
@@ -81,6 +93,7 @@ async def run_worker(
     owner_telegram_id: int,
     owner_lang: str,
     decrypted_session_string: str,
+    session_blob: bytes | None = None,
 ) -> None:
     lang = resolve_lang(owner_lang)
     client = TelegramClient(
@@ -111,14 +124,14 @@ async def run_worker(
         async with client:
             # string session may be revoked (logout / password change / ban)
             if not await client.is_user_authorized():
-                await _mark_session_dead(ctx, session_id, lang, "not authorized")
+                await _mark_session_dead(ctx, session_id, lang, "not authorized", session_blob)
                 return
             logger.info("worker started for session_id=%s owner_user_id=%s", session_id, owner_user_id)
             await client.run_until_disconnected()
     except _DEAD_SESSION_ERRORS as exc:
         # Covers both connect() refusing the auth key up front and the session
         # being killed mid-flight while run_until_disconnected() holds it.
-        await _mark_session_dead(ctx, session_id, lang, type(exc).__name__)
+        await _mark_session_dead(ctx, session_id, lang, type(exc).__name__, session_blob)
     finally:
         if notifier is not None:
             await notifier.close()

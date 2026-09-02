@@ -24,8 +24,8 @@ logger = logging.getLogger(__name__)
 POLL_INTERVAL_SECONDS = 15
 
 
-async def _load_active_sessions() -> list[tuple[int, int, int, str, str]]:
-    """Return (session_id, owner_user_id, owner_telegram_id, lang, session_string) tuples."""
+async def _load_active_sessions() -> list[tuple[int, int, int, str, str, bytes]]:
+    """Return (session_id, owner_user_id, owner_telegram_id, lang, session_string, ciphertext)."""
     async with get_session() as db:
         rows = (
             await db.execute(
@@ -34,12 +34,12 @@ async def _load_active_sessions() -> list[tuple[int, int, int, str, str]]:
                 .where(Session.is_active.is_(True))
             )
         ).all()
-        loaded: list[tuple[int, int, int, str, str]] = []
+        loaded: list[tuple[int, int, int, str, str, bytes]] = []
         for session, telegram_id, language_code in rows:
             try:
                 loaded.append(
                     (session.id, session.user_id, telegram_id, language_code or "uk",
-                     decrypt_session(session.encrypted_session))
+                     decrypt_session(session.encrypted_session), session.encrypted_session)
                 )
             except Exception:
                 logger.exception("could not decrypt session_id=%s; skipping", session.id)
@@ -48,6 +48,13 @@ async def _load_active_sessions() -> list[tuple[int, int, int, str, str]]:
 
 async def _supervise() -> None:
     running: dict[int, asyncio.Task] = {}
+    # Which session string each running worker was started with. Re-linking an
+    # account upserts onto the SAME row, so without this a worker would keep
+    # using the OLD, revoked key while the DB already held the new one — and
+    # then deactivate the row containing that fresh login when the old key
+    # finally failed. Seen in production: "not connected" seconds after a
+    # successful re-link.
+    started_with: dict[int, str] = {}
     logger.info("userbot supervisor started; polling every %ss for active sessions", POLL_INTERVAL_SECONDS)
 
     while True:
@@ -68,20 +75,28 @@ async def _supervise() -> None:
                 if not task.cancelled() and task.exception() is not None:
                     logger.error("worker session_id=%s crashed: %r", session_id, task.exception())
                 del running[session_id]
+                started_with.pop(session_id, None)
 
         # stop workers whose session was deactivated/removed
         for session_id in list(running):
             if session_id not in active:
                 running[session_id].cancel()
                 del running[session_id]
+                started_with.pop(session_id, None)
                 logger.info("stopped worker for deactivated session_id=%s", session_id)
+            elif started_with.get(session_id) != active[session_id][4]:
+                running[session_id].cancel()
+                del running[session_id]
+                started_with.pop(session_id, None)
+                logger.info("session_id=%s was re-linked; restarting its worker", session_id)
 
         # start workers for newly-active sessions
-        for session_id, (sid, owner_user_id, telegram_id, lang, session_string) in active.items():
+        for session_id, (sid, owner_user_id, telegram_id, lang, session_string, session_blob) in active.items():
             if session_id not in running:
                 running[session_id] = asyncio.create_task(
-                    run_worker(sid, owner_user_id, telegram_id, lang, session_string)
+                    run_worker(sid, owner_user_id, telegram_id, lang, session_string, session_blob)
                 )
+                started_with[session_id] = session_string
                 logger.info("started worker for session_id=%s", session_id)
 
         await asyncio.sleep(POLL_INTERVAL_SECONDS)
