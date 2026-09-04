@@ -12,6 +12,9 @@ class ManagementBotSettings(BaseSettings):
     encryption_key: str
     # shown to users; optional
     manager_bot_username: str | None = None   # e.g. "personmanbot" (no @)
+    # This bot's own @username — used to send a payer back here from the
+    # payment page, which lives on a plain web origin with no Telegram context.
+    management_bot_username: str | None = None
     support_contact: str = "@your_support"     # manager/support handle
 
     # admin panel
@@ -50,6 +53,19 @@ class ManagementBotSettings(BaseSettings):
     crypto_pay_token: str | None = None        # @CryptoBot Crypto Pay API token
     crypto_pay_testnet: bool = False
     crypto_pay_fiat: str = "USD"
+
+    # WayForPay (bank cards, UAH). All three unset = the hryvnia option is
+    # hidden and Stars/crypto behave exactly as before, so an unconfigured
+    # deployment loses nothing. The domain MUST equal the one registered on
+    # the merchant in the WayForPay cabinet — the purchase signature covers
+    # it, and a mismatch is rejected at the gateway, not here.
+    wayforpay_merchant_account: str | None = None
+    wayforpay_secret_key: str | None = None
+    wayforpay_domain: str | None = None
+
+    @property
+    def wayforpay_configured(self) -> bool:
+        return bool(self.wayforpay_merchant_account and self.wayforpay_secret_key and self.wayforpay_domain)
 
     @property
     def admin_id_set(self) -> set[int]:

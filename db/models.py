@@ -70,6 +70,21 @@ class Subscription(Base):
     status: Mapped[SubscriptionStatus] = mapped_column(default=SubscriptionStatus.PENDING)
     payment_provider: Mapped[str] = mapped_column()
     external_invoice_id: Mapped[str | None] = mapped_column(default=None)
+    # WayForPay addresses a subscription by the order reference of its FIRST
+    # successful payment — renewals, suspension and cancellation all key off
+    # this one string, so it is unique and indexed rather than folded into
+    # external_invoice_id (which crypto already uses for its own invoice id).
+    order_reference: Mapped[str | None] = mapped_column(unique=True, index=True, default=None)
+    # Gateway-driven renewal is ON. The schedule itself lives at WayForPay,
+    # not here: this flag only records what we asked for, so the UI can offer
+    # to cancel it and so a renewal callback knows to extend rather than
+    # start a new period.
+    auto_renew: Mapped[bool] = mapped_column(default=False, server_default="false")
+    # What the card is charged, in whole UAH. Recorded at creation so the
+    # payment page renders the same figure the user was quoted even if the
+    # tariff price or their referral discount changes in between, and so the
+    # callback can check the gateway reports the amount we actually asked for.
+    amount_uah: Mapped[int | None] = mapped_column(default=None)
     # How many days this period covers once activated. Set at creation time
     # (from the duration the user picked) and read back by `activate()` —
     # a Stars invoice payload can't carry it, so it has to live on the row.
@@ -80,6 +95,43 @@ class Subscription(Base):
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
     user: Mapped["User"] = relationship(back_populates="subscriptions")
+
+
+class PaymentEvent(Base):
+    """One charge reported by a payment gateway, recorded before it is acted on.
+
+    Exists for idempotency, not for reporting. WayForPay re-delivers a callback
+    until it gets a signed "accept" back, so the same successful charge can
+    arrive several times; without a durable record of what was already applied,
+    a retry would extend the subscription a second time. The unique constraint
+    is what actually enforces that — checking-then-inserting would still race
+    two concurrent deliveries.
+    """
+
+    __tablename__ = "payment_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    provider: Mapped[str] = mapped_column(index=True)
+    order_reference: Mapped[str] = mapped_column(index=True)
+    # Identifies the individual charge within an order reference: a regular
+    # payment reuses its order reference for every renewal, so these two
+    # together are what make a charge unique.
+    auth_code: Mapped[str] = mapped_column(default="")
+    processing_date: Mapped[str] = mapped_column(default="")
+    amount: Mapped[float] = mapped_column(default=0)
+    currency: Mapped[str] = mapped_column(default="")
+    status: Mapped[str] = mapped_column(default="")
+    subscription_id: Mapped[int | None] = mapped_column(
+        ForeignKey("subscriptions.id", ondelete="SET NULL"), default=None
+    )
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint(
+            "provider", "order_reference", "auth_code", "processing_date",
+            name="uq_payment_event_charge",
+        ),
+    )
 
 
 class ReferralLink(Base):

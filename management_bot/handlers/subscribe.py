@@ -29,10 +29,13 @@ from aiogram.types import (
     PreCheckoutQuery,
 )
 
+from connect_web.server import connect_server
 from db.session import get_session
 from management_bot import keyboards, subscriptions
 from management_bot.config import settings
+from management_bot.payment import build_wayforpay
 from management_bot.payment.crypto_pay import CryptoPayProvider
+from pay_web.app import REGULAR_MODE_BY_DAYS
 from shared import referrals
 from shared.i18n import features, lang_of, t
 from shared.pricing import PriceBreakdown, compute_prices, get_usd_uah_rate
@@ -71,7 +74,9 @@ def _crypto() -> CryptoPayProvider | None:
 def _card_text(plan, prices: PriceBreakdown | None, lang: str) -> str:
     lines = [f"💳 <b>{plan.title}</b>"]
     if plan.available and prices is not None:
-        lines.append(f"{prices.profit_uah}₴  ·  ${prices.usd_net}  ·  {prices.stars}⭐")
+        # uah_invoice, not profit_uah: this is a price the user can actually
+        # pay by card, so it has to be the sum the card is charged.
+        lines.append(f"{prices.uah_invoice}₴  ·  ${prices.usd_net}  ·  {prices.stars}⭐")
     lines.append("")
     lines.extend(f"• {f}" for f in features(lang, plan.id))
     return "\n".join(lines)
@@ -129,6 +134,15 @@ def _duration_kb(tariff_id: str, idx: int, lang: str, prices: dict[Duration, Pri
         text = f"{label} −{pct}%" if pct > 0 else label
         label_row.append(InlineKeyboardButton(text=text, callback_data="sub:noop"))
 
+    # Hryvnia leads: it is the currency the product is priced in and the one
+    # most buyers here actually hold. It used to be an inert reference row —
+    # now it charges a card, so it sits at the top of the grid.
+    uah_row = [
+        InlineKeyboardButton(
+            text=f"{prices[code].uah_invoice}₴", callback_data=f"sub:pay:{tariff_id}:{code.value}:card"
+        )
+        for code, _ in codes
+    ]
     stars_row = [
         InlineKeyboardButton(text=f"{prices[code].stars}⭐", callback_data=f"sub:pay:{tariff_id}:{code.value}:stars")
         for code, _ in codes
@@ -137,14 +151,13 @@ def _duration_kb(tariff_id: str, idx: int, lang: str, prices: dict[Duration, Pri
         InlineKeyboardButton(text=f"${prices[code].usd_net}", callback_data=f"sub:pay:{tariff_id}:{code.value}:crypto")
         for code, _ in codes
     ]
-    uah_row = [InlineKeyboardButton(text=f"{round(prices[code].profit_uah)}₴", callback_data="sub:noop") for code, _ in codes]
 
     return InlineKeyboardMarkup(
         inline_keyboard=[
             label_row,
+            uah_row,
             stars_row,
             usd_row,
-            uah_row,
             [InlineKeyboardButton(text=t(lang, "sub_back"), callback_data=f"sub:nav:{idx}")],
         ]
     )
@@ -393,4 +406,69 @@ async def on_check_crypto(callback: CallbackQuery) -> None:
         title = get_plan(sub.tariff).title
     await _edit(callback.message, t(lang, "sub_success", title=title))
     await callback.message.answer(t(lang, "sub_connect_hint"), reply_markup=keyboards.main_menu(lang))
+    await callback.answer()
+
+
+# --- WayForPay (bank card, UAH) --------------------------------------------
+
+
+@router.callback_query(F.data.startswith("sub:pay:") & F.data.endswith(":card"))
+async def on_pay_card(callback: CallbackQuery) -> None:
+    lang = lang_of(callback)
+    _, _, tariff_id, dur_code, _ = callback.data.split(":")
+    plan = get_plan(tariff_id)
+    if not plan.available:
+        # see on_pay_stars — callback_data can be forged directly, bypassing
+        # on_buy's availability gate.
+        await callback.answer(t(lang, "sub_unavailable"), show_alert=True)
+        return
+    opt = get_duration(dur_code)
+    user = callback.from_user
+    async with get_session() as db:
+        discount = await referrals.get_discount_percent(db, user.id)
+    effective = effective_profit_uah(plan.profit_uah, opt, discount)
+    if effective <= 0:
+        await _grant_free(callback, lang, plan, tariff_id, opt)
+        return
+
+    provider = build_wayforpay()
+    base = connect_server.base_url
+    if provider is None or not base:
+        # No gateway configured, or no public origin to host the payment page
+        # on — either way there is nothing to send the user to.
+        await callback.answer(t(lang, "sub_card_unavailable"), show_alert=True)
+        return
+
+    prices = await compute_prices(effective)
+    # Auto-renewal only for periods WayForPay can express. Anything else is
+    # sold as a one-off rather than silently renewed on the wrong schedule.
+    auto_renew = opt.days in REGULAR_MODE_BY_DAYS
+
+    async with get_session() as db:
+        sub = await subscriptions.create_pending(
+            db, telegram_id=user.id, tariff=Tariff(tariff_id), provider_name="wayforpay",
+            username=user.username, full_name=user.full_name, period_days=opt.days,
+            auto_renew=auto_renew, amount_uah=prices.uah_invoice,
+        )
+        # The reference embeds the id, so it can only be built after the flush
+        # inside create_pending has assigned one.
+        sub.order_reference = subscriptions.build_order_reference(sub.id)
+        await db.commit()
+        order_reference = sub.order_reference
+
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=t(lang, "sub_pay_card_btn"), url=f"{base.rstrip('/')}/pay/{order_reference}"
+                )
+            ]
+        ]
+    )
+    prompt_key = "sub_card_prompt" if auto_renew else "sub_card_prompt_once"
+    await _edit(
+        callback.message,
+        t(lang, prompt_key, title=plan.title, amount=prices.uah_invoice, days=opt.days),
+        kb=kb,
+    )
     await callback.answer()

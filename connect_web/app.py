@@ -160,8 +160,8 @@ async def _owner_lang(db: AsyncSession, telegram_id: int) -> str:
 def create_app(
     *,
     bot_token: str,
-    webapp_api_id: int,
-    webapp_api_hash: str,
+    webapp_api_id: int | None,
+    webapp_api_hash: str | None,
     manager_bot_username: str | None = None,
     db_dependency=_default_db,
     session_checker: SessionChecker | None = None,
@@ -175,6 +175,12 @@ def create_app(
     @app.middleware("http")
     async def security_headers(request, call_next):
         response = await call_next(request)
+        # /pay is a mounted sub-app with a deliberately different policy: it
+        # must POST a form to the payment gateway, which this CSP forbids.
+        # Middleware on the parent runs for mounted routes too, so it has to
+        # step aside explicitly rather than rely on the sub-app's own header.
+        if request.url.path.startswith("/pay"):
+            return response
         response.headers["Content-Security-Policy"] = CSP
         response.headers["Referrer-Policy"] = "no-referrer"
         response.headers["X-Content-Type-Options"] = "nosniff"

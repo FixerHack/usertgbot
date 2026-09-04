@@ -628,6 +628,103 @@ _TR: dict[str, tuple[str, str, str]] = {
     ),
     "sub_stars_title": ("Підписка {title}", "Подписка {title}", "{title} subscription"),
     "sub_stars_desc": ("Тариф {title} на {days} днів", "Тариф {title} на {days} дней", "{title} tariff for {days} days"),
+    # --- card payments (WayForPay, UAH) ---
+    "sub_card_unavailable": (
+        "Оплата карткою тимчасово недоступна",
+        "Оплата картой временно недоступна",
+        "Card payment is temporarily unavailable",
+    ),
+    "sub_pay_card_btn": ("💳 Сплатити карткою", "💳 Оплатить картой", "💳 Pay by card"),
+    "sub_card_prompt": (
+        "💳 Оплата тарифу <b>{title}</b> — {amount} ₴.\n"
+        "Натисніть кнопку нижче, щоб перейти на захищену сторінку оплати.\n\n"
+        "🔄 Підписка продовжуватиметься автоматично кожні {days} днів. "
+        "Скасувати можна будь-коли в ⚙️ Налаштуваннях.",
+        "💳 Оплата тарифа <b>{title}</b> — {amount} ₴.\n"
+        "Нажмите кнопку ниже, чтобы перейти на защищённую страницу оплаты.\n\n"
+        "🔄 Подписка будет продлеваться автоматически каждые {days} дней. "
+        "Отменить можно в любой момент в ⚙️ Настройках.",
+        "💳 Payment for <b>{title}</b> — {amount} UAH.\n"
+        "Tap the button below to open the secure payment page.\n\n"
+        "🔄 The subscription renews automatically every {days} days. "
+        "You can cancel any time in ⚙️ Settings.",
+    ),
+    "sub_card_prompt_once": (
+        "💳 Оплата тарифу <b>{title}</b> — {amount} ₴.\n"
+        "Натисніть кнопку нижче, щоб перейти на захищену сторінку оплати.\n\n"
+        "Це разовий платіж — автоматичного продовження не буде.",
+        "💳 Оплата тарифа <b>{title}</b> — {amount} ₴.\n"
+        "Нажмите кнопку ниже, чтобы перейти на защищённую страницу оплаты.\n\n"
+        "Это разовый платёж — автоматического продления не будет.",
+        "💳 Payment for <b>{title}</b> — {amount} UAH.\n"
+        "Tap the button below to open the secure payment page.\n\n"
+        "This is a one-off charge — it will not renew automatically.",
+    ),
+    # --- auto-renewal, managed from settings ---
+    "set_autorenew_on": (
+        "🔄 Автопродовження: увімкнено",
+        "🔄 Автопродление: включено",
+        "🔄 Auto-renewal: on",
+    ),
+    "set_autorenew_btn_cancel": (
+        "🔄 Скасувати автопродовження",
+        "🔄 Отменить автопродление",
+        "🔄 Cancel auto-renewal",
+    ),
+    "set_autorenew_cancelled": (
+        "🔄 Автопродовження скасовано. Підписка діятиме до {date}, далі списань не буде.",
+        "🔄 Автопродление отменено. Подписка будет действовать до {date}, дальше списаний не будет.",
+        "🔄 Auto-renewal cancelled. The subscription stays active until {date}, with no further charges.",
+    ),
+    "set_autorenew_cancel_failed": (
+        "Не вдалося скасувати автопродовження. Спробуйте ще раз або напишіть у підтримку.",
+        "Не удалось отменить автопродление. Попробуйте ещё раз или напишите в поддержку.",
+        "Could not cancel auto-renewal. Try again or contact support.",
+    ),
+    # --- the payment page itself (pay_web) ---
+    "pay_title": ("Оплата підписки", "Оплата подписки", "Subscription payment"),
+    "pay_product": (
+        "Тариф {title} — {days} днів",
+        "Тариф {title} — {days} дней",
+        "{title} tariff — {days} days",
+    ),
+    "pay_button": ("Сплатити карткою", "Оплатить картой", "Pay by card"),
+    "pay_autorenew_note": (
+        "Підписка продовжуватиметься автоматично. Скасувати можна будь-коли в боті.",
+        "Подписка будет продлеваться автоматически. Отменить можно в любой момент в боте.",
+        "The subscription renews automatically. You can cancel any time in the bot.",
+    ),
+    "pay_once_note": (
+        "Разовий платіж, без автоматичного продовження.",
+        "Разовый платёж, без автоматического продления.",
+        "A one-off charge, with no automatic renewal.",
+    ),
+    "pay_expired_title": ("Посилання застаріло", "Ссылка устарела", "This link is no longer valid"),
+    "pay_expired_text": (
+        "Поверніться в бот і почніть оплату заново.",
+        "Вернитесь в бот и начните оплату заново.",
+        "Go back to the bot and start the payment again.",
+    ),
+    "pay_already_title": ("Уже оплачено", "Уже оплачено", "Already paid"),
+    "pay_already_text": (
+        "Ця підписка вже активна — платити ще раз не потрібно.",
+        "Эта подписка уже активна — платить ещё раз не нужно.",
+        "This subscription is already active — no need to pay again.",
+    ),
+    "pay_done_title": ("Дякуємо!", "Спасибо!", "Thank you!"),
+    "pay_done_text": (
+        "Повертайтеся в бот — підтвердження прийде туди, щойно банк підтвердить платіж.",
+        "Возвращайтесь в бот — подтверждение придёт туда, как только банк подтвердит платёж.",
+        "Head back to the bot — confirmation arrives there as soon as the bank confirms the payment.",
+    ),
+    "pay_renew_failed": (
+        "⚠️ Не вдалося продовжити тариф <b>{title}</b> — банк відхилив списання.\n"
+        "Спробу буде повторено завтра. Перевірте баланс або оплатіть вручну: 💳 Тарифи.",
+        "⚠️ Не удалось продлить тариф <b>{title}</b> — банк отклонил списание.\n"
+        "Попытка повторится завтра. Проверьте баланс или оплатите вручную: 💳 Тарифы.",
+        "⚠️ Could not renew <b>{title}</b> — the bank declined the charge.\n"
+        "It will be retried tomorrow. Check your balance or pay manually: 💳 Plans.",
+    ),
     # settings — profile
     "set_title": ("⚙️ <b>Налаштування</b>", "⚙️ <b>Настройки</b>", "⚙️ <b>Settings</b>"),
     "set_joined": ("📅 В боті з: {date}", "📅 В боте с: {date}", "📅 Joined: {date}"),

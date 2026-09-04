@@ -14,6 +14,7 @@ from db import queries
 from db.session import get_session
 from management_bot import keyboards, storage
 from management_bot.handlers import connect
+from management_bot.payment import build_wayforpay
 from management_bot.storage import upsert_user
 from shared.i18n import lang_of, t
 from shared.settings_schema import (
@@ -45,7 +46,7 @@ class SettingsStates(StatesGroup):
 # --- menus -----------------------------------------------------------------
 
 
-def _main_menu(has_account: bool, lang: str) -> InlineKeyboardMarkup:
+def _main_menu(has_account: bool, lang: str, *, auto_renew: bool = False) -> InlineKeyboardMarkup:
     account_btn = (
         InlineKeyboardButton(text=t(lang, "set_btn_unlink"), callback_data="set:unlink")
         if has_account
@@ -63,6 +64,13 @@ def _main_menu(has_account: bool, lang: str) -> InlineKeyboardMarkup:
             account_btn,
         ],
     ]
+    if auto_renew:
+        # Only shown while there is something to cancel — a standing card
+        # mandate is exactly the thing a user must be able to stop without
+        # writing to support.
+        rows.append(
+            [InlineKeyboardButton(text=t(lang, "set_autorenew_btn_cancel"), callback_data="set:autorenew:cancel")]
+        )
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -96,7 +104,11 @@ async def _build_settings(db, telegram_id: int, lang: str) -> tuple[str, InlineK
         used = (await queries.peek_check_quota(db, user.id, quota)).used
         lines.append(t(lang, "set_check_quota", left=max(quota - used, 0), total=quota))
 
-    return "\n".join(lines), _main_menu(has_account, lang)
+    auto_renew = bool(active and active.auto_renew and active.order_reference)
+    if auto_renew:
+        lines.append(t(lang, "set_autorenew_on"))
+
+    return "\n".join(lines), _main_menu(has_account, lang, auto_renew=auto_renew)
 
 
 async def _has_active_sub(telegram_id: int) -> bool:
@@ -214,6 +226,44 @@ async def on_back(callback: CallbackQuery, state: FSMContext) -> None:
         text, kb = await _build_settings(db, callback.message.chat.id, lang)
     await callback.message.edit_text(text, reply_markup=kb)
     await callback.answer()
+
+
+@router.callback_query(F.data == "set:autorenew:cancel")
+async def on_cancel_autorenew(callback: CallbackQuery) -> None:
+    lang = lang_of(callback)
+    telegram_id = callback.message.chat.id
+    async with get_session() as db:
+        sub = await queries.get_active_subscription_by_telegram_id(db, telegram_id)
+        if sub is None or not sub.auto_renew or not sub.order_reference:
+            await callback.answer()
+            return
+        order_reference, expires_at = sub.order_reference, sub.expires_at
+
+    provider = build_wayforpay()
+    if provider is None:
+        await callback.answer(t(lang, "set_autorenew_cancel_failed"), show_alert=True)
+        return
+
+    # Cancel at the gateway BEFORE clearing our flag. The other order would
+    # show "cancelled" to a user whose card is still being charged every
+    # month — the worst possible failure mode for a standing mandate.
+    try:
+        await provider.remove_regular(order_reference)
+    except Exception:
+        logger.exception("wayforpay: failed to remove regular payment %s", order_reference)
+        await callback.answer(t(lang, "set_autorenew_cancel_failed"), show_alert=True)
+        return
+
+    async with get_session() as db:
+        sub = await queries.get_active_subscription_by_telegram_id(db, telegram_id)
+        if sub is not None:
+            sub.auto_renew = False
+            await db.commit()
+        text, kb = await _build_settings(db, telegram_id, lang)
+
+    date = f"{expires_at:%d.%m.%Y}" if expires_at else "—"
+    await callback.answer(t(lang, "set_autorenew_cancelled", date=date), show_alert=True)
+    await callback.message.edit_text(text, reply_markup=kb)
 
 
 @router.callback_query(F.data == "set:me")

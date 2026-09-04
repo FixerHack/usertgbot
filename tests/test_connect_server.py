@@ -34,7 +34,16 @@ def server(monkeypatch):
 
     monkeypatch.setattr(mod.uvicorn, "Config", _Config)
     monkeypatch.setattr(mod.uvicorn, "Server", _FakeUvicornServer)
-    monkeypatch.setattr(mod, "create_app", lambda **kw: object())
+    class _FakeApp:
+        """Only needs to accept the /pay sub-app the server mounts on it."""
+
+        def __init__(self):
+            self.mounted = []
+
+        def mount(self, path, app):
+            self.mounted.append(path)
+
+    monkeypatch.setattr(mod, "create_app", lambda **kw: _FakeApp())
 
     s = ConnectWebServer()
     s._captured = captured

@@ -73,3 +73,32 @@ async def test_purchase_creates_user(db_session):
     await db_session.commit()
     user = await get_user_by_telegram_id(db_session, 2002)
     assert user is not None
+
+
+# --- gateway order references ---------------------------------------------
+
+
+async def test_order_reference_round_trips_through_its_id():
+    from management_bot.subscriptions import build_order_reference, parse_order_reference
+
+    assert parse_order_reference(build_order_reference(42)) == 42
+    assert parse_order_reference("not-ours-42") is None
+    assert parse_order_reference("") is None
+
+
+async def test_a_reference_that_merely_parses_cannot_claim_a_subscription(db_session):
+    """The id is embedded in the reference, so anything that looks like ours
+    parses. Resolution still has to prove the stored reference is a prefix of
+    the incoming one, or one subscription's callback could credit another."""
+    from management_bot import subscriptions
+    from shared.tariffs import Tariff
+
+    sub = await subscriptions.create_pending(
+        db_session, telegram_id=1, tariff=Tariff.PRO, provider_name="wayforpay"
+    )
+    sub.order_reference = subscriptions.build_order_reference(sub.id, now=1700000000)
+    await db_session.commit()
+
+    assert await subscriptions.get_by_order_reference(db_session, sub.order_reference) is sub
+    # same id, different (forged) timestamp
+    assert await subscriptions.get_by_order_reference(db_session, f"sub-{sub.id}-1699999999") is None
