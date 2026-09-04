@@ -272,3 +272,16 @@ async def test_expiry_is_the_period_the_buyer_paid_for(db_session):
 
     await db_session.refresh(sub)
     assert (sub.expires_at - datetime.utcnow()).days >= 364
+
+
+async def test_return_page_accepts_the_gateways_post(db_session):
+    """WayForPay POSTs the result to returnUrl unless that is switched off in
+    the cabinet — a GET-only route would show the buyer a 405 right after
+    they paid."""
+    async with await _client(db_session) as ac:
+        get = await ac.get("/done?lang=uk")
+        post = await ac.post("/done?lang=uk", data={"transactionStatus": "Approved"})
+
+    assert get.status_code == 200
+    assert post.status_code == 200
+    assert "<h1>" in post.text

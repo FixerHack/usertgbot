@@ -16,11 +16,11 @@ Fee constants (update the comments' date if the underlying deal changes):
     Fragment withdrawal chain (Stars -> TON -> fiat), ~$13 per 1,000 Stars as
     of mid-2026 per multiple sources (see chat for links). This is the Stars
     counterpart of CRYPTO_FEE: how much of the face value survives cash-out.
-  WFP_FEE — WayForPay's card-acquiring fee. UNLIKE the two above this one is
-    contractual, not published: it is negotiated per merchant. Taken from the
-    merchant's own cabinet ("Ліміти і комісії -> Комісія магазину: 2%",
-    checked 2026-09-04). Set it too LOW and every hryvnia sale quietly nets
-    less than the tariff promises, so re-check it if the contract changes.
+The hryvnia channel is the deliberate exception to the profit guarantee: it
+charges the round tariff price and lets WayForPay's ~2% come out of our own
+margin, because a card price is the one a buyer reads and compares, and 511 UAH
+reads worse than 500. That is an owner's decision, not an oversight — every
+other channel still grosses up.
 """
 
 from __future__ import annotations
@@ -40,7 +40,6 @@ _FALLBACK_USD_UAH = 44.74  # NBU rate observed 2026-08-22; used only if the API 
 CRYPTO_FEE = 0.03            # Crypto Pay app fee (source: CryptoBot dashboard, 2026-08-22)
 STARS_NET_USD_PER_STAR = 0.013  # net USD per Star after Fragment withdrawal (2026)
 STARS_ROUND_STEP = 50        # Stars price is rounded UP to a round number (nicer UX)
-WFP_FEE = 0.02               # WayForPay card fee (source: merchant cabinet, 2026-09-04)
 
 _CACHE_TTL_SECONDS = 3600
 _cache: dict[str, tuple[float, float]] = {}  # {"usd_uah": (rate, fetched_at_monotonic)}
@@ -86,8 +85,10 @@ class PriceBreakdown:
     usd_net: float        # profit_uah converted to USD, rounded to tenths
     usdt_invoice: float   # Crypto Pay invoice amount (USD/USDT) — grossed for CRYPTO_FEE
     stars: int            # Stars invoice amount — grossed for the Fragment withdrawal cut
-    # What the CARD is charged. Distinct from profit_uah, which is what we
-    # KEEP — showing the latter as a price undercharges by the acquirer's fee.
+    # What the CARD is charged: the round tariff price, deliberately NOT
+    # grossed up for the acquirer's fee (see the module docstring). Kept as
+    # its own field so the card price has one place to change if that call is
+    # ever revisited.
     uah_invoice: int
 
 
@@ -96,7 +97,6 @@ async def compute_prices(profit_uah: int, *, usd_uah_rate: float | None = None) 
     usd_net = profit_uah / rate  # unrounded — everything below grosses up from this
     usdt_invoice = usd_net / (1 - CRYPTO_FEE)
     stars = usd_net / STARS_NET_USD_PER_STAR
-    uah_invoice = profit_uah / (1 - WFP_FEE)
     return PriceBreakdown(
         profit_uah=profit_uah,
         usd_net=_round_tenths(usd_net),
@@ -107,7 +107,5 @@ async def compute_prices(profit_uah: int, *, usd_uah_rate: float | None = None) 
         # than e.g. 173⭐, and still guarantees the profit target since it
         # only ever rounds up from the exact grossed-up figure.
         stars=max(STARS_ROUND_STEP, math.ceil(stars / STARS_ROUND_STEP) * STARS_ROUND_STEP),
-        # whole hryvnia, rounded UP: a card charge with kopiykas looks like a
-        # mistake on a subscription, and rounding down would eat the margin.
-        uah_invoice=math.ceil(uah_invoice),
+        uah_invoice=int(profit_uah),
     )

@@ -106,13 +106,14 @@ async def test_hryvnia_is_the_first_price_row_and_charges_a_card():
     assert all(b.callback_data.endswith(":card") for b in first_price_row)
 
 
-async def test_the_grid_quotes_the_sum_the_card_is_charged():
-    """profit_uah is what we keep; showing it as the price would undercharge
-    by exactly the acquirer's fee on every hryvnia sale."""
+async def test_the_grid_quotes_round_hryvnia_prices():
+    """The card price is shown exactly as the tariff is priced — 500₴, not a
+    grossed-up 511₴. Chosen for legibility; the acquirer fee comes out of the
+    margin instead."""
     kb, prices = await _grid()
     shown = {b.text for b in kb.inline_keyboard[1]}
     assert shown == {f"{p.uah_invoice}₴" for p in prices.values()}
-    assert shown != {f"{p.profit_uah}₴" for p in prices.values()}
+    assert shown == {f"{p.profit_uah}₴" for p in prices.values()}
 
 
 async def test_stars_and_crypto_keep_their_own_rows():

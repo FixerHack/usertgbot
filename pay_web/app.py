@@ -110,11 +110,14 @@ def create_app(
         user = await db.get(User, sub.user_id)
         return resolve_lang(user.language_code if user is not None else None)
 
-    @app.get("/done", response_class=HTMLResponse)
+    # GET *and* POST: WayForPay posts the result to returnUrl by default (the
+    # cabinet has a toggle to disable it). Accepting both means the page works
+    # either way instead of greeting a paying customer with a 405.
+    @app.api_route("/done", methods=["GET", "POST"], response_class=HTMLResponse)
     async def done(lang: str = "uk") -> HTMLResponse:
         # The gateway sends the browser here whatever the outcome, so this page
         # deliberately claims nothing about success — the callback decides, and
-        # the bot delivers the verdict.
+        # the bot delivers the verdict. Nothing posted here is trusted.
         lang = resolve_lang(lang)
         body = (
             f"<h1>{_esc(t(lang, 'pay_done_title'))}</h1>"
