@@ -3,7 +3,7 @@
 (function () {
   "use strict";
 
-  var KEY = "moozuku-theme";
+  var KEY = "useragent-theme";
   var root = document.documentElement;
 
   function apply(theme) {

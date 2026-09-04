@@ -1,21 +1,20 @@
-"""Serves the one-page site, with prices and legal details filled at render.
+"""Serves the one-page site, with live prices filled in at render time.
 
 Prices come from the same `shared.tariffs` + `shared.pricing` the bot sells
 from, so the site cannot quote a figure the bot no longer charges — a
 mismatch the acquirer's moderation would (rightly) treat as misleading.
 
-The seller's legal details come from the environment, never from this repo:
-they are a real person's name, tax id and address, and they have no business
-in version control. Anything missing renders as a loud placeholder rather
-than silently disappearing, because a page that quietly drops its contacts
-still looks finished.
+The seller's registration details are deliberately NOT here: WayForPay shows
+them on its own merchant page during checkout, which the acquirer confirmed is
+sufficient. Publishing a private individual's name, tax id and home address on
+an open page is a real cost with no gain, so the page names the support contact
+and points at the merchant page for the rest.
 """
 
 from __future__ import annotations
 
 import html
 import logging
-from dataclasses import dataclass
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -43,30 +42,9 @@ CSP = (
     "form-action 'none'"
 )
 
-MISSING = '<span class="missing">не заповнено</span>'
-
-
-@dataclass(frozen=True)
-class LegalDetails:
-    """Seller identification required on the site by the acquirer."""
-
-    entity: str | None = None      # ФОП Прізвище Ім'я По батькові
-    tax_id: str | None = None      # ЄДРПОУ / ІПН
-    address: str | None = None
-    email: str | None = None
-    phone: str | None = None
-
-    @property
-    def complete(self) -> bool:
-        return all([self.entity, self.tax_id, self.address, self.email])
-
 
 def _esc(value: object) -> str:
     return html.escape(str(value), quote=True)
-
-
-def _or_missing(value: str | None) -> str:
-    return _esc(value) if value else MISSING
 
 
 async def _price_rows() -> str:
@@ -101,17 +79,8 @@ def create_app(
     *,
     bot_username: str | None = None,
     support_contact: str | None = None,
-    legal: LegalDetails | None = None,
 ) -> FastAPI:
     app = FastAPI(title="usertgbot site", docs_url=None, redoc_url=None)
-    details = legal or LegalDetails()
-
-    if not details.complete:
-        # Loud in the log, not just on the page: an incomplete legal block is
-        # the single most likely reason the acquirer refuses to activate.
-        logger.warning(
-            "landing: seller legal details incomplete — moderation will reject this page"
-        )
 
     @app.middleware("http")
     async def security_headers(request: Request, call_next):
@@ -136,11 +105,6 @@ def create_app(
             .replace("__BOT_LINK__", _esc(bot_link))
             .replace("__BOT_NAME__", _esc(f"@{bot_username}" if bot_username else "бот"))
             .replace("__SUPPORT__", _esc(support_contact or "—"))
-            .replace("__LEGAL_ENTITY__", _or_missing(details.entity))
-            .replace("__LEGAL_TAX_ID__", _or_missing(details.tax_id))
-            .replace("__LEGAL_ADDRESS__", _or_missing(details.address))
-            .replace("__LEGAL_EMAIL__", _or_missing(details.email))
-            .replace("__LEGAL_PHONE__", _or_missing(details.phone))
         )
         return HTMLResponse(html_out)
 

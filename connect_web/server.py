@@ -19,7 +19,6 @@ import logging
 import uvicorn
 
 from connect_web.app import create_app
-from landing.app import LegalDetails
 from landing.app import create_app as create_landing_app
 from management_bot.payment.wayforpay import WayForPayProvider
 from pay_web.app import create_app as create_pay_app
@@ -46,7 +45,6 @@ class ConnectWebServer:
         wayforpay: WayForPayProvider | None = None,
         bot_username: str | None = None,
         support_contact: str | None = None,
-        legal: LegalDetails | None = None,
         public_url: str | None = None, host: str = "127.0.0.1",
     ) -> str:
         """`public_url` is the production path: a real domain already terminating
@@ -89,7 +87,6 @@ class ConnectWebServer:
             create_landing_app(
                 bot_username=bot_username,
                 support_contact=support_contact,
-                legal=legal,
             ),
         )
         config = uvicorn.Config(app, host=host, port=port, log_level="warning")
