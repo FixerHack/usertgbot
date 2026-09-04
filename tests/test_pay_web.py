@@ -35,7 +35,7 @@ class _Notifier:
         return True
 
 
-async def _client(db_session, *, provider=PROVIDER, notifier=None):
+async def _client(db_session, *, provider=PROVIDER, notifier=None, bot_username=None):
     from httpx import ASGITransport, AsyncClient
 
     from pay_web.app import create_app
@@ -48,6 +48,7 @@ async def _client(db_session, *, provider=PROVIDER, notifier=None):
         base_url=lambda: "https://moozuku.tech",
         db_dependency=_db,
         notifier=notifier,
+        bot_username=bot_username,
     )
     return AsyncClient(transport=ASGITransport(app=app), base_url="http://t")
 
@@ -340,25 +341,22 @@ async def test_terminal_pages_carry_no_auto_submit(db_session):
     assert "pay.js" not in expired.text
 
 
-async def test_done_page_can_close_itself_only_inside_telegram(db_session):
-    async with await _client(db_session) as ac:
-        done = await ac.get("/done?lang=uk")
-        script = await ac.get("/done.js")
-
-    assert "telegram-web-app.js" in done.text
-    assert 'id="close-app"' in done.text
-    # Hidden until the script confirms it really is running in Telegram —
-    # otherwise a browser visitor gets a button that does nothing.
-    assert "hidden" in done.text
-    assert script.status_code == 200
-
-
-async def test_csp_allows_telegram_to_frame_the_payment_pages(db_session):
-    """Telegram Desktop and Web render a Mini App in an iframe; the previous
-    frame-ancestors 'none' would have shown a blank panel there."""
+async def test_payment_pages_may_not_be_framed(db_session):
+    """These open in a real browser, never embedded. Allowing a frame would
+    let another page wrap the payment step in its own chrome."""
     sub = await _pending(db_session)
     async with await _client(db_session) as ac:
-        csp = (await ac.get(f"/{sub.order_reference}")).headers["content-security-policy"]
+        page = await ac.get(f"/{sub.order_reference}")
 
-    assert "frame-ancestors https://web.telegram.org https://*.telegram.org" in csp
+    csp = page.headers["content-security-policy"]
+    assert "frame-ancestors 'none'" in csp
     assert "form-action https://secure.wayforpay.com" in csp
+    # The gateway is the ONLY thing this policy opens up.
+    assert "script-src 'self';" in csp
+    assert "telegram" not in csp
+
+
+async def test_done_page_links_back_to_the_bot(db_session):
+    async with await _client(db_session, bot_username="useagentperbot") as ac:
+        done = await ac.get("/done?lang=uk")
+    assert "https://t.me/useagentperbot" in done.text

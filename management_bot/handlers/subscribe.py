@@ -27,7 +27,6 @@ from aiogram.types import (
     LabeledPrice,
     Message,
     PreCheckoutQuery,
-    WebAppInfo,
 )
 
 from connect_web.server import connect_server
@@ -457,16 +456,18 @@ async def on_pay_card(callback: CallbackQuery) -> None:
         await db.commit()
         order_reference = sub.order_reference
 
-    pay_url = f"{base.rstrip('/')}/pay/{order_reference}"
-    # A Mini App button keeps the whole purchase inside Telegram; Telegram
-    # only accepts HTTPS for one, so a local run without a tunnel falls back
-    # to an ordinary link rather than failing to send the message at all.
-    button = (
-        InlineKeyboardButton(text=t(lang, "sub_pay_card_btn"), web_app=WebAppInfo(url=pay_url))
-        if pay_url.startswith("https://")
-        else InlineKeyboardButton(text=t(lang, "sub_pay_card_btn"), url=pay_url)
+    # A plain link, not a Mini App button: the payment page opens in the
+    # system browser, where Apple Pay, Google Pay and 3-D Secure all work.
+    # An embedded WebView would have put those at risk for no gain.
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=t(lang, "sub_pay_card_btn"), url=f"{base.rstrip('/')}/pay/{order_reference}"
+                )
+            ]
+        ]
     )
-    kb = InlineKeyboardMarkup(inline_keyboard=[[button]])
     prompt_key = "sub_card_prompt" if auto_renew else "sub_card_prompt_once"
     await _edit(
         callback.message,

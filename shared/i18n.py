@@ -711,7 +711,6 @@ _TR: dict[str, tuple[str, str, str]] = {
         "Эта подписка уже активна — платить ещё раз не нужно.",
         "This subscription is already active — no need to pay again.",
     ),
-    "pay_close": ("Закрити", "Закрыть", "Close"),
     "pay_done_title": ("Дякуємо!", "Спасибо!", "Thank you!"),
     "pay_done_text": (
         "Повертайтеся в бот — підтвердження прийде туди, щойно банк підтвердить платіж.",
