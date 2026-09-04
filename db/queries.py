@@ -131,7 +131,7 @@ async def get_active_subscription_for_user(
         .order_by(Subscription.created_at.desc())
     )
     for sub in result.scalars():
-        if sub.expires_at is None or _as_aware(sub.expires_at) > now:
+        if sub.expires_at is None or as_aware(sub.expires_at) > now:
             return sub
     return None
 
@@ -145,8 +145,12 @@ async def get_active_subscription_by_telegram_id(
     return await get_active_subscription_for_user(session, user.id, now=now)
 
 
-def _as_aware(dt: datetime) -> datetime:
-    """SQLite hands back naive datetimes; treat those as UTC for comparison."""
+def as_aware(dt: datetime) -> datetime:
+    """SQLite hands back naive datetimes; treat those as UTC for comparison.
+
+    Public because the same rule has to hold anywhere a stored timestamp is
+    compared to "now" — a second copy of it is a second thing to get wrong.
+    """
     return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
 
 
@@ -222,7 +226,7 @@ async def peek_send_cooldown(
     row = await get_or_create_settings(session, user_id)
     if row.last_send_at is None:
         return True, 0
-    elapsed = (now - _as_aware(row.last_send_at)).total_seconds()
+    elapsed = (now - as_aware(row.last_send_at)).total_seconds()
     remaining = cooldown_seconds - elapsed
     return remaining <= 0, max(0, ceil(remaining))
 

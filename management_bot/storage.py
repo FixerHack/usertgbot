@@ -9,12 +9,13 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import Session, Subscription, SubscriptionStatus, User
+from db.queries import as_aware
 from management_bot.crypto import encrypt_session
 
 
@@ -29,6 +30,22 @@ class SubscriptionInfo:
     tariff: str
     status: str
     expires_at: datetime | None
+
+
+def _is_expired(sub: Subscription, now: datetime) -> bool:
+    return sub.expires_at is not None and as_aware(sub.expires_at) <= now
+
+
+def _effective_status(sub: Subscription, now: datetime) -> str:
+    """What the subscription IS, not what its row still says.
+
+    Nothing sweeps the table to flip ACTIVE to EXPIRED when a period ends, so
+    the stored status outlives the period it describes.
+    """
+    raw = sub.status.value if hasattr(sub.status, "value") else str(sub.status)
+    if raw == SubscriptionStatus.ACTIVE.value and _is_expired(sub, now):
+        return SubscriptionStatus.EXPIRED.value
+    return raw
 
 
 @dataclass
@@ -148,19 +165,29 @@ async def get_user_status(session: AsyncSession, telegram_id: int) -> UserStatus
             await session.execute(
                 select(Subscription)
                 .where(Subscription.user_id == user.id)
-                .order_by(Subscription.created_at.desc())
+                # id, not created_at: two rows written in the same second tie
+                # on the timestamp, and renewals make that likelier.
+                .order_by(Subscription.id.desc())
             )
         )
         .scalars()
         .all()
     )
-    chosen = next((s for s in subs if s.status == SubscriptionStatus.ACTIVE), None)
+    now = datetime.now(timezone.utc)
+    # An ACTIVE row whose period has run out is not active. The command gate
+    # (db.queries.get_active_subscription_for_user) has always known that;
+    # this screen did not, so a lapsed subscriber was told "active" while
+    # every command was already being refused.
+    chosen = next(
+        (s for s in subs if s.status == SubscriptionStatus.ACTIVE and not _is_expired(s, now)),
+        None,
+    )
     if chosen is None and subs:
         chosen = subs[0]
     sub_info = (
         SubscriptionInfo(
             tariff=chosen.tariff,
-            status=chosen.status.value if hasattr(chosen.status, "value") else str(chosen.status),
+            status=_effective_status(chosen, now),
             expires_at=chosen.expires_at,
         )
         if chosen is not None

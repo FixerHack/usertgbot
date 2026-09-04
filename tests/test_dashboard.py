@@ -53,3 +53,38 @@ def test_main_menu_has_no_connect_button():
     labels = [b.text for row in keyboards.main_menu("uk").keyboard for b in row]
     assert not any("Підключити" in label for label in labels)
     assert not any("Прив" in label for label in labels)
+
+
+def _sub(state: str, expires=datetime(2026, 10, 5, tzinfo=timezone.utc)) -> UserStatus:
+    return UserStatus(
+        known=True,
+        subscription=SubscriptionInfo(tariff="pro", status=state, expires_at=expires),
+        sessions=[],
+    )
+
+
+def test_subscription_state_is_translated_not_a_raw_database_value():
+    """It reached the screen as the stored English word in every language."""
+    assert "активна" in dashboard.build_start_text(_sub("active"), NOW, "uk")
+    assert "активна" in dashboard.build_start_text(_sub("active"), NOW, "ru")
+    assert "active" in dashboard.build_start_text(_sub("active"), NOW, "en")
+    assert "active" not in dashboard.build_start_text(_sub("active"), NOW, "uk")
+
+
+def test_a_lapsed_subscription_reads_as_ended_not_as_a_future_date():
+    """"до 05.10.2026" on a period that already ended reads as a promise."""
+    text = dashboard.build_start_text(_sub("expired"), NOW, "uk")
+    assert "завершилась" in text
+    assert "до 05.10.2026" not in text
+    assert "05.10.2026" in text
+
+
+def test_pending_and_cancelled_states_have_words_too():
+    assert "очікує оплати" in dashboard.build_start_text(_sub("pending"), NOW, "uk")
+    assert "скасована" in dashboard.build_start_text(_sub("cancelled"), NOW, "uk")
+
+
+def test_an_unknown_state_is_shown_rather_than_swallowed():
+    """If the enum grows, printing the raw value is a louder failure than a
+    blank space where the state should be."""
+    assert "something_new" in dashboard.build_start_text(_sub("something_new"), NOW, "uk")

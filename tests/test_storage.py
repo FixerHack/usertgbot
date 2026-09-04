@@ -133,3 +133,65 @@ async def test_get_last_known_phone_picks_the_most_recent(db_session):
     await db_session.commit()
 
     assert await storage.get_last_known_phone(db_session, 1001) == "+2new"
+
+
+async def test_lapsed_subscription_is_not_reported_as_active(db_session):
+    """Nothing sweeps the table to flip ACTIVE to EXPIRED when a period ends,
+    so the row keeps saying "active" long after it stopped being true. The
+    command gate already checked the date; this screen did not, and told a
+    lapsed subscriber they were active while every command was refused."""
+    user = await storage.upsert_user(db_session, 2001)
+    db_session.add(
+        Subscription(
+            user_id=user.id,
+            tariff="pro",
+            status=SubscriptionStatus.ACTIVE,
+            payment_provider="wayforpay",
+            expires_at=datetime(2020, 1, 1, tzinfo=timezone.utc),
+        )
+    )
+    await db_session.commit()
+
+    status = await storage.get_user_status(db_session, 2001)
+    assert status.subscription.status == "expired"
+
+
+async def test_a_live_subscription_wins_over_a_lapsed_one(db_session):
+    """A renewal or a re-purchase leaves the old row behind; the screen has to
+    show the one the user is actually on."""
+    user = await storage.upsert_user(db_session, 2002)
+    db_session.add_all(
+        [
+            Subscription(
+                user_id=user.id, tariff="standard", status=SubscriptionStatus.ACTIVE,
+                payment_provider="wayforpay",
+                expires_at=datetime(2020, 1, 1, tzinfo=timezone.utc),
+            ),
+            Subscription(
+                user_id=user.id, tariff="premium", status=SubscriptionStatus.ACTIVE,
+                payment_provider="wayforpay",
+                expires_at=datetime(2099, 1, 1, tzinfo=timezone.utc),
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    status = await storage.get_user_status(db_session, 2002)
+    assert status.subscription.tariff == "premium"
+    assert status.subscription.status == "active"
+
+
+async def test_a_subscription_with_no_expiry_stays_active(db_session):
+    """A granted/comped subscription has no end date; it must not be read as
+    "expired at the epoch"."""
+    user = await storage.upsert_user(db_session, 2003)
+    db_session.add(
+        Subscription(
+            user_id=user.id, tariff="pro", status=SubscriptionStatus.ACTIVE,
+            payment_provider="referral_free", expires_at=None,
+        )
+    )
+    await db_session.commit()
+
+    status = await storage.get_user_status(db_session, 2003)
+    assert status.subscription.status == "active"

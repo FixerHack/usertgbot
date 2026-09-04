@@ -20,14 +20,47 @@ def _tariff_title(raw: str) -> str:
         return raw
 
 
+# Only these four exist; anything else means the enum grew without this
+# screen being told, and printing the raw value is a louder failure than
+# silently showing nothing.
+_STATE_KEYS = {
+    "active": "sub_state_active",
+    "expired": "sub_state_expired",
+    "pending": "sub_state_pending",
+    "cancelled": "sub_state_cancelled",
+}
+
+
+def _state_label(state: str, lang: str) -> str:
+    key = _STATE_KEYS.get(state)
+    return t(lang, key) if key else state
+
+
+def _expiry_phrase(sub, lang: str) -> str:
+    """"until <date>" while it runs, "ended <date>" once it has — the same
+    date reads as a promise or as a fact depending on which side of it we
+    are on."""
+    if sub.expires_at is None:
+        return ""
+    date = f"{sub.expires_at:%d.%m.%Y}"
+    key = "dash_expired_on" if sub.status == "expired" else "dash_expires"
+    return t(lang, key, date=date)
+
+
 def build_start_text(status: UserStatus, now: datetime, lang: str = "uk") -> str:
     lines = [t(lang, "start_header"), ""]
     lines.append(f"📅 {now:%d.%m.%Y}")
 
     if status.subscription is not None:
         sub = status.subscription
-        expires = t(lang, "dash_expires", date=f"{sub.expires_at:%d.%m.%Y}") if sub.expires_at is not None else ""
-        lines.append(t(lang, "dash_sub", tariff=_tariff_title(sub.tariff), status=sub.status, expires=expires))
+        lines.append(
+            t(
+                lang, "dash_sub",
+                tariff=_tariff_title(sub.tariff),
+                status=_state_label(sub.status, lang),
+                expires=_expiry_phrase(sub, lang),
+            )
+        )
     else:
         lines.append(t(lang, "dash_sub_none"))
 
