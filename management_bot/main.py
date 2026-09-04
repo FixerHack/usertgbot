@@ -11,6 +11,7 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 
 from connect_web.server import connect_server
+from landing.app import LegalDetails
 from management_bot.config import settings
 from management_bot.connect_notices import run_expiry_notices
 from management_bot.payment import build_wayforpay
@@ -86,6 +87,14 @@ async def run() -> None:
                 manager_bot_username=settings.manager_bot_username,
                 wayforpay=wayforpay,
                 bot_username=settings.management_bot_username,
+                support_contact=settings.support_contact,
+                legal=LegalDetails(
+                    entity=settings.legal_entity,
+                    tax_id=settings.legal_tax_id,
+                    address=settings.legal_address,
+                    email=settings.legal_email,
+                    phone=settings.legal_phone,
+                ),
                 public_url=settings.connect_public_url,
                 host=settings.connect_web_host,
             )

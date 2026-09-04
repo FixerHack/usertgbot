@@ -175,13 +175,12 @@ def create_app(
     @app.middleware("http")
     async def security_headers(request, call_next):
         response = await call_next(request)
-        # /pay is a mounted sub-app with a deliberately different policy: it
-        # must POST a form to the payment gateway, which this CSP forbids.
-        # Middleware on the parent runs for mounted routes too, so it has to
-        # step aside explicitly rather than rely on the sub-app's own header.
-        if request.url.path.startswith("/pay"):
-            return response
-        response.headers["Content-Security-Policy"] = CSP
+        # Middleware on this app also runs for the sub-apps mounted on it
+        # (/pay, and the landing), whose policies are deliberately different —
+        # the payment page has to POST a form to the gateway, which this CSP
+        # forbids. So this acts as the default only: a sub-app that already
+        # set its own header keeps it.
+        response.headers.setdefault("Content-Security-Policy", CSP)
         response.headers["Referrer-Policy"] = "no-referrer"
         response.headers["X-Content-Type-Options"] = "nosniff"
         return response

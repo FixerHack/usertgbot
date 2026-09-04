@@ -285,3 +285,32 @@ async def test_return_page_accepts_the_gateways_post(db_session):
     assert get.status_code == 200
     assert post.status_code == 200
     assert "<h1>" in post.text
+
+
+async def test_mounted_under_connect_the_pay_app_keeps_its_own_csp(db_session):
+    """The two apps share an origin but not a policy: the payment page must be
+    allowed to POST a form to the gateway, which connect_web's CSP forbids.
+    Parent middleware runs for mounted routes too, so this seam is exactly
+    where the payment page would silently stop submitting."""
+    from httpx import ASGITransport, AsyncClient
+
+    from connect_web.app import create_app as create_connect_app
+    from pay_web.app import create_app as create_pay_app
+
+    async def _db():
+        yield db_session
+
+    sub = await _pending(db_session)
+
+    root = create_connect_app(
+        bot_token="8123456:AAF-test-token-value", webapp_api_id=1, webapp_api_hash="h",
+        db_dependency=_db,
+    )
+    root.mount("/pay", create_pay_app(provider=PROVIDER, base_url=lambda: "https://x", db_dependency=_db))
+
+    async with AsyncClient(transport=ASGITransport(app=root), base_url="http://t") as ac:
+        pay = await ac.get(f"/pay/{sub.order_reference}")
+        connect = await ac.get("/connect/nope")
+
+    assert "form-action https://secure.wayforpay.com" in pay.headers["content-security-policy"]
+    assert "form-action 'none'" in connect.headers["content-security-policy"]

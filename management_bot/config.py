@@ -68,6 +68,15 @@ class ManagementBotSettings(BaseSettings):
     # keep working, which is the confusing half-broken state to avoid.
     wayforpay_merchant_password: str | None = None
 
+    # Seller identification shown on the public site. Deliberately env-only:
+    # this is a real person's name, tax id and address, and the acquirer will
+    # not activate a merchant whose site omits them.
+    legal_entity: str | None = None
+    legal_tax_id: str | None = None
+    legal_address: str | None = None
+    legal_email: str | None = None
+    legal_phone: str | None = None
+
     @property
     def wayforpay_configured(self) -> bool:
         return bool(self.wayforpay_merchant_account and self.wayforpay_secret_key and self.wayforpay_domain)
