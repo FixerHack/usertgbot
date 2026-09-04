@@ -62,6 +62,11 @@ class ManagementBotSettings(BaseSettings):
     wayforpay_merchant_account: str | None = None
     wayforpay_secret_key: str | None = None
     wayforpay_domain: str | None = None
+    # A THIRD value, distinct from the secret key: the cabinet issues both.
+    # Signatures use the key; regularApi (cancel a standing mandate)
+    # authenticates with this. Without it cancellation fails while payments
+    # keep working, which is the confusing half-broken state to avoid.
+    wayforpay_merchant_password: str | None = None
 
     @property
     def wayforpay_configured(self) -> bool:

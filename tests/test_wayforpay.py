@@ -207,6 +207,19 @@ async def test_remove_regular_sends_credentials_and_accepts_4100():
     assert client.sent["json"]["orderReference"] == "sub-7-1"
 
 
+async def test_regular_api_uses_the_merchant_password_not_the_secret_key():
+    """The cabinet issues both, and they are different values. Sending the key
+    here fails only the cancel call — payments keep working, so the breakage
+    shows up as "cancel does nothing" long after deploy."""
+    client = _FakeClient({"REASONCODE": 4100, "REASON": "OK"})
+    provider = WayForPayProvider(
+        TEST_MERCHANT_ACCOUNT, TEST_MERCHANT_SECRET, DOMAIN,
+        merchant_password="separate-password", client=client,
+    )
+    await provider.remove_regular("sub-7-1")
+    assert client.sent["json"]["merchantPassword"] == "separate-password"
+
+
 async def test_regular_failure_raises_rather_than_reporting_success():
     """A cancel that quietly failed would tell the user their card is safe
     while it keeps being charged."""

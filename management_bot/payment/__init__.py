@@ -19,4 +19,5 @@ def build_wayforpay() -> WayForPayProvider | None:
         settings.wayforpay_merchant_account,
         settings.wayforpay_secret_key,
         settings.wayforpay_domain,
+        merchant_password=settings.wayforpay_merchant_password,
     )

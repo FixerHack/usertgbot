@@ -132,11 +132,17 @@ class WayForPayProvider:
         secret_key: str,
         domain: str,
         *,
+        merchant_password: str | None = None,
         client: httpx.AsyncClient | None = None,
     ) -> None:
         self._account = merchant_account
         self._secret = secret_key
         self._domain = domain
+        # The cabinet lists "Merchant secret key" and "Merchant password" as
+        # two SEPARATE values: signatures use the key, regularApi authenticates
+        # with the password. Falls back to the key only so a half-configured
+        # deployment fails at the API with a clear error rather than at import.
+        self._password = merchant_password or secret_key
         self._client = client  # tests inject a mocked client
 
     # --- purchase ----------------------------------------------------------
@@ -245,11 +251,10 @@ class WayForPayProvider:
         payload = {
             "requestType": request_type,
             "merchantAccount": self._account,
-            # Documented as "merchantPassword". It is the merchant secret key —
-            # regularApi authenticates by the key itself rather than by a
-            # signature, unlike every other endpoint here. If this ever comes
-            # back as an auth failure, this line is the first thing to check.
-            "merchantPassword": self._secret,
+            # NOT the secret key: the cabinet issues a distinct "Merchant
+            # password" for this. regularApi authenticates by that value
+            # directly rather than by a signature, unlike every other endpoint.
+            "merchantPassword": self._password,
             "orderReference": order_reference,
             **extra,
         }

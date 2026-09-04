@@ -17,9 +17,10 @@ Fee constants (update the comments' date if the underlying deal changes):
     of mid-2026 per multiple sources (see chat for links). This is the Stars
     counterpart of CRYPTO_FEE: how much of the face value survives cash-out.
   WFP_FEE — WayForPay's card-acquiring fee. UNLIKE the two above this one is
-    contractual, not published: it is negotiated per merchant, so the value
-    here is a placeholder until the signed rate is known. Set it too LOW and
-    every hryvnia sale quietly nets less than the tariff promises.
+    contractual, not published: it is negotiated per merchant. Taken from the
+    merchant's own cabinet ("Ліміти і комісії -> Комісія магазину: 2%",
+    checked 2026-09-04). Set it too LOW and every hryvnia sale quietly nets
+    less than the tariff promises, so re-check it if the contract changes.
 """
 
 from __future__ import annotations
@@ -39,7 +40,7 @@ _FALLBACK_USD_UAH = 44.74  # NBU rate observed 2026-08-22; used only if the API 
 CRYPTO_FEE = 0.03            # Crypto Pay app fee (source: CryptoBot dashboard, 2026-08-22)
 STARS_NET_USD_PER_STAR = 0.013  # net USD per Star after Fragment withdrawal (2026)
 STARS_ROUND_STEP = 50        # Stars price is rounded UP to a round number (nicer UX)
-WFP_FEE = 0.0275             # WayForPay card fee — REPLACE with the rate in the signed contract
+WFP_FEE = 0.02               # WayForPay card fee (source: merchant cabinet, 2026-09-04)
 
 _CACHE_TTL_SECONDS = 3600
 _cache: dict[str, tuple[float, float]] = {}  # {"usd_uah": (rate, fetched_at_monotonic)}
