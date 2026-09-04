@@ -314,3 +314,51 @@ async def test_mounted_under_connect_the_pay_app_keeps_its_own_csp(db_session):
 
     assert "form-action https://secure.wayforpay.com" in pay.headers["content-security-policy"]
     assert "form-action 'none'" in connect.headers["content-security-policy"]
+
+
+async def test_payment_page_submits_itself(db_session):
+    """The gateway takes a POST and the invoice API that would give us a plain
+    link cannot carry a recurring schedule, so this page is unavoidable — but
+    a tap on it is not."""
+    sub = await _pending(db_session)
+    async with await _client(db_session) as ac:
+        page = await ac.get(f"/{sub.order_reference}")
+        script = await ac.get("/pay.js")
+
+    assert 'id="pay-form"' in page.text
+    assert '<script src="/pay/pay.js">' in page.text
+    assert script.status_code == 200
+    # The visible button stays: it is what happens when scripting is off.
+    assert 'type="submit"' in page.text
+
+
+async def test_terminal_pages_carry_no_auto_submit(db_session):
+    """An expired page has no form; loading the submitter there would throw
+    in the console of a page a confused user is already looking at."""
+    async with await _client(db_session) as ac:
+        expired = await ac.get("/sub-999-1")
+    assert "pay.js" not in expired.text
+
+
+async def test_done_page_can_close_itself_only_inside_telegram(db_session):
+    async with await _client(db_session) as ac:
+        done = await ac.get("/done?lang=uk")
+        script = await ac.get("/done.js")
+
+    assert "telegram-web-app.js" in done.text
+    assert 'id="close-app"' in done.text
+    # Hidden until the script confirms it really is running in Telegram —
+    # otherwise a browser visitor gets a button that does nothing.
+    assert "hidden" in done.text
+    assert script.status_code == 200
+
+
+async def test_csp_allows_telegram_to_frame_the_payment_pages(db_session):
+    """Telegram Desktop and Web render a Mini App in an iframe; the previous
+    frame-ancestors 'none' would have shown a blank panel there."""
+    sub = await _pending(db_session)
+    async with await _client(db_session) as ac:
+        csp = (await ac.get(f"/{sub.order_reference}")).headers["content-security-policy"]
+
+    assert "frame-ancestors https://web.telegram.org https://*.telegram.org" in csp
+    assert "form-action https://secure.wayforpay.com" in csp

@@ -10,9 +10,10 @@ The browser never decides whether a payment happened: `returnUrl` is decoration,
 the callback is what activates a subscription. That split matters because the
 user can close the tab, and because a `returnUrl` hit is trivially forgeable.
 
-No JavaScript on purpose. Auto-submitting the form would need a script and a
-looser CSP for a saved tap; the user pressing a button they can read is worth
-more here than the tap.
+The page submits itself. WayForPay's purchase endpoint takes a POST, and the
+invoice API that would give us a plain link cannot carry a recurring schedule —
+so a page of ours is unavoidable, but a tap on it is not. The visible button
+stays as the fallback for scripting being off.
 """
 
 from __future__ import annotations
@@ -24,7 +25,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import SubscriptionStatus, User
@@ -46,12 +47,18 @@ STATIC = HERE / "static"
 # form-action must name the gateway explicitly: the whole page exists to POST
 # somewhere else. Everything else stays shut — there is no script on the page,
 # so script-src is 'none' rather than 'self'.
+# telegram.org is allowed for one reason: opened as a Mini App, the page after
+# payment offers to close itself, and that needs Telegram's own script. It is
+# their WebView already, so trusting their script there costs nothing.
+# frame-ancestors permits Telegram, which renders Mini Apps in an iframe on
+# Desktop and Web — 'none' would break the whole thing there.
 CSP = (
     "default-src 'none'; "
+    "script-src 'self' https://telegram.org; "
     "style-src 'unsafe-inline'; "
     "img-src 'self' data:; "
     "base-uri 'none'; "
-    "frame-ancestors 'none'; "
+    "frame-ancestors https://web.telegram.org https://*.telegram.org; "
     "form-action https://secure.wayforpay.com"
 )
 
@@ -67,9 +74,16 @@ async def _default_db() -> AsyncIterator[AsyncSession]:
         yield session
 
 
-def _page(body: str) -> str:
-    template = (STATIC / "pay.html").read_text(encoding="utf-8")
-    return template.replace("__BODY__", body)
+def _page(body: str, *, script: str = "", telegram: bool = False) -> str:
+    """`telegram` pulls in Telegram's Mini App script, which is only useful on
+    the page that offers to close the WebView."""
+    head = '<script src="https://telegram.org/js/telegram-web-app.js"></script>' if telegram else ""
+    return (
+        (STATIC / "pay.html").read_text(encoding="utf-8")
+        .replace("__BODY__", body)
+        .replace("__HEAD__", head)
+        .replace("__SCRIPT__", script)
+    )
 
 
 def _esc(value: object) -> str:
@@ -113,6 +127,14 @@ def create_app(
     # GET *and* POST: WayForPay posts the result to returnUrl by default (the
     # cabinet has a toggle to disable it). Accepting both means the page works
     # either way instead of greeting a paying customer with a 405.
+    @app.get("/pay.js")
+    async def pay_script() -> FileResponse:
+        return FileResponse(STATIC / "pay.js", media_type="application/javascript")
+
+    @app.get("/done.js")
+    async def done_script() -> FileResponse:
+        return FileResponse(STATIC / "done.js", media_type="application/javascript")
+
     @app.api_route("/done", methods=["GET", "POST"], response_class=HTMLResponse)
     async def done(lang: str = "uk") -> HTMLResponse:
         # The gateway sends the browser here whatever the outcome, so this page
@@ -122,10 +144,11 @@ def create_app(
         body = (
             f"<h1>{_esc(t(lang, 'pay_done_title'))}</h1>"
             f"<p>{_esc(t(lang, 'pay_done_text'))}</p>"
+            f'<button class="btn" id="close-app" hidden>{_esc(t(lang, "pay_close"))}</button>'
         )
         if bot_username:
-            body += f'<p><a class="btn" href="https://t.me/{_esc(bot_username)}">@{_esc(bot_username)}</a></p>'
-        return HTMLResponse(_page(body))
+            body += f'<p><a class="btn ghost" href="https://t.me/{_esc(bot_username)}">@{_esc(bot_username)}</a></p>'
+        return HTMLResponse(_page(body, telegram=True, script='<script src="/pay/done.js"></script>'))
 
     @app.get("/{order_reference}", response_class=HTMLResponse)
     async def pay_page(order_reference: str, db: AsyncSession = Depends(db_dependency)) -> HTMLResponse:
@@ -172,12 +195,12 @@ def create_app(
             f"<p class=\"product\">{_esc(product)}</p>"
             f"<p class=\"amount\">{_esc(sub.amount_uah)} ₴</p>"
             f"<p class=\"note\">{_esc(note)}</p>"
-            f'<form method="POST" action="{_esc(form.action)}" accept-charset="utf-8">'
+            f'<form id="pay-form" method="POST" action="{_esc(form.action)}" accept-charset="utf-8">'
             f"{_hidden_inputs(form.fields)}"
             f'<button class="btn" type="submit">{_esc(t(lang, "pay_button"))}</button>'
             "</form>"
         )
-        return HTMLResponse(_page(body))
+        return HTMLResponse(_page(body, script='<script src="/pay/pay.js"></script>'))
 
     @app.post("/wayforpay/callback")
     async def callback(request: Request, db: AsyncSession = Depends(db_dependency)) -> JSONResponse:
