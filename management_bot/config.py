@@ -56,9 +56,14 @@ class ManagementBotSettings(BaseSettings):
 
     # WayForPay (bank cards, UAH). All three unset = the hryvnia option is
     # hidden and Stars/crypto behave exactly as before, so an unconfigured
-    # deployment loses nothing. The domain MUST equal the one registered on
-    # the merchant in the WayForPay cabinet — the purchase signature covers
-    # it, and a mismatch is rejected at the gateway, not here.
+    # deployment loses nothing.
+    #
+    # The domain is covered by the purchase signature but is NOT checked
+    # against the site registered on the merchant — tested against the live
+    # gateway with the real merchant on 2026-09-05: the registered domain, the
+    # domain actually serving the page, and a deliberately unrelated one were
+    # all accepted. Set it to the registered site anyway: it costs nothing and
+    # stays correct if the gateway ever starts enforcing this.
     wayforpay_merchant_account: str | None = None
     wayforpay_secret_key: str | None = None
     wayforpay_domain: str | None = None
