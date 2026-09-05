@@ -31,20 +31,21 @@ _STATE_KEYS = {
 }
 
 
-def _state_label(state: str, lang: str) -> str:
-    key = _STATE_KEYS.get(state)
-    return t(lang, key) if key else state
+def _state_label(sub, lang: str) -> str:
+    """A finished subscription carries its date inside the state, a running one
+    outside it: "Pro (завершилась 03.09)" against "Pro (активна) до 03.11".
+    The same date is a fact in one case and a promise in the other, and it
+    should not be printed twice to say so."""
+    if sub.status == "expired" and sub.expires_at is not None:
+        return t(lang, "sub_state_expired_on", date=f"{sub.expires_at:%d.%m.%Y}")
+    key = _STATE_KEYS.get(sub.status)
+    return t(lang, key) if key else sub.status
 
 
 def _expiry_phrase(sub, lang: str) -> str:
-    """"until <date>" while it runs, "ended <date>" once it has — the same
-    date reads as a promise or as a fact depending on which side of it we
-    are on."""
-    if sub.expires_at is None:
+    if sub.expires_at is None or sub.status == "expired":
         return ""
-    date = f"{sub.expires_at:%d.%m.%Y}"
-    key = "dash_expired_on" if sub.status == "expired" else "dash_expires"
-    return t(lang, key, date=date)
+    return t(lang, "dash_expires", date=f"{sub.expires_at:%d.%m.%Y}")
 
 
 def build_start_text(status: UserStatus, now: datetime, lang: str = "uk") -> str:
@@ -57,7 +58,7 @@ def build_start_text(status: UserStatus, now: datetime, lang: str = "uk") -> str
             t(
                 lang, "dash_sub",
                 tariff=_tariff_title(sub.tariff),
-                status=_state_label(sub.status, lang),
+                status=_state_label(sub, lang),
                 expires=_expiry_phrase(sub, lang),
             )
         )

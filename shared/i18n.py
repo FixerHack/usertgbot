@@ -95,7 +95,7 @@ _TR: dict[str, tuple[str, str, str]] = {
         "💳 Subscription: <b>none</b>",
     ),
     "dash_expires": (" до {date}", " до {date}", " until {date}"),
-    "dash_expired_on": (" — завершилась {date}", " — завершилась {date}", " — ended {date}"),
+    "sub_state_expired_on": ("завершилась {date}", "завершилась {date}", "ended {date}"),
     # The subscription state as a word. It used to reach the screen as the raw
     # database value ("active"), untranslated, in every language.
     "sub_state_active": ("активна", "активна", "active"),

@@ -72,11 +72,12 @@ def test_subscription_state_is_translated_not_a_raw_database_value():
 
 
 def test_a_lapsed_subscription_reads_as_ended_not_as_a_future_date():
-    """"до 05.10.2026" on a period that already ended reads as a promise."""
+    """"до 05.10.2026" on a period that already ended reads as a promise, and
+    the word must appear once, not on both sides of the bracket."""
     text = dashboard.build_start_text(_sub("expired"), NOW, "uk")
-    assert "завершилась" in text
+    assert "(завершилась 05.10.2026)" in text
     assert "до 05.10.2026" not in text
-    assert "05.10.2026" in text
+    assert text.count("завершилась") == 1
 
 
 def test_pending_and_cancelled_states_have_words_too():

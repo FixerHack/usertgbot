@@ -195,3 +195,45 @@ async def test_a_subscription_with_no_expiry_stays_active(db_session):
 
     status = await storage.get_user_status(db_session, 2003)
     assert status.subscription.status == "active"
+
+
+async def test_a_lapsed_subscription_beats_an_abandoned_checkout(db_session):
+    """Every tap on "buy" that is never paid leaves a PENDING row behind. If
+    the newest row simply won, someone whose Pro had just run out would be
+    told they are awaiting payment — describing a checkout they walked away
+    from rather than the subscription they lost."""
+    user = await storage.upsert_user(db_session, 2004)
+    db_session.add_all(
+        [
+            Subscription(
+                user_id=user.id, tariff="pro", status=SubscriptionStatus.ACTIVE,
+                payment_provider="wayforpay",
+                started_at=datetime(2026, 8, 1),
+                expires_at=datetime(2026, 8, 31, tzinfo=timezone.utc),
+            ),
+            Subscription(
+                user_id=user.id, tariff="pro", status=SubscriptionStatus.PENDING,
+                payment_provider="wayforpay",
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    status = await storage.get_user_status(db_session, 2004)
+    assert status.subscription.status == "expired"
+    assert status.subscription.expires_at is not None
+
+
+async def test_a_first_time_buyer_mid_checkout_still_sees_pending(db_session):
+    """The rule must not hide the only thing a brand-new user has."""
+    user = await storage.upsert_user(db_session, 2005)
+    db_session.add(
+        Subscription(
+            user_id=user.id, tariff="pro", status=SubscriptionStatus.PENDING,
+            payment_provider="wayforpay",
+        )
+    )
+    await db_session.commit()
+
+    status = await storage.get_user_status(db_session, 2005)
+    assert status.subscription.status == "pending"

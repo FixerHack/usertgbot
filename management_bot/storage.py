@@ -182,6 +182,13 @@ async def get_user_status(session: AsyncSession, telegram_id: int) -> UserStatus
         (s for s in subs if s.status == SubscriptionStatus.ACTIVE and not _is_expired(s, now)),
         None,
     )
+    if chosen is None:
+        # Nothing live. Prefer the last subscription that was actually paid
+        # for over the newest row: tapping "buy" and walking away leaves a
+        # PENDING row behind, and showing that to someone whose Pro just
+        # lapsed tells them they are mid-purchase instead of that their
+        # subscription ended.
+        chosen = next((s for s in subs if s.started_at is not None), None)
     if chosen is None and subs:
         chosen = subs[0]
     sub_info = (
