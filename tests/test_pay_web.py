@@ -414,3 +414,72 @@ async def test_money_for_a_retired_plan_never_revives_it(db_session):
     await db_session.refresh(sub)
     assert sub.status is St.CANCELLED
     assert sub.expires_at is None
+
+
+class _Canceller:
+    def __init__(self):
+        self.calls: list[str] = []
+
+    async def __call__(self, order_reference: str) -> None:
+        self.calls.append(order_reference)
+
+
+async def test_a_refund_ends_the_subscription_at_once(db_session):
+    """Money back means access back. Leaving it running to the end of the paid
+    period gives the service away for free."""
+    from db.models import SubscriptionStatus as St
+
+    sub = await _pending(db_session)
+    await subscriptions.activate(db_session, sub, mandate_canceller=_Canceller())
+    await db_session.commit()
+    notifier = _Notifier()
+
+    async with await _client(db_session, notifier=notifier) as ac:
+        r = await ac.post(
+            "/wayforpay/callback",
+            content=_signed_callback(sub.order_reference, status="Refunded", auth_code="r1", processing_date="1800"),
+        )
+
+    assert r.json()["status"] == "accept"
+    await db_session.refresh(sub)
+    assert sub.status is St.CANCELLED
+    assert notifier.sent, "the owner has to be told their subscription stopped"
+
+
+async def test_a_refund_also_stops_the_recurring_payment(db_session, monkeypatch):
+    """Refunding someone and then charging them again next month is the worst
+    possible pairing."""
+    canceller = _Canceller()
+    monkeypatch.setattr(subscriptions, "_default_mandate_canceller", canceller)
+
+    sub = await _pending(db_session)
+    await subscriptions.activate(db_session, sub, mandate_canceller=_Canceller())
+    await db_session.commit()
+
+    async with await _client(db_session) as ac:
+        await ac.post(
+            "/wayforpay/callback",
+            content=_signed_callback(sub.order_reference, status="Refunded", auth_code="r2", processing_date="1801"),
+        )
+
+    await db_session.refresh(sub)
+    assert canceller.calls == [sub.order_reference]
+    assert sub.auto_renew is False
+
+
+async def test_a_voided_authorisation_counts_as_a_refund(db_session):
+    """Same outcome by a different route: the customer paid nothing."""
+    from db.models import SubscriptionStatus as St
+
+    sub = await _pending(db_session)
+    await subscriptions.activate(db_session, sub, mandate_canceller=_Canceller())
+    await db_session.commit()
+
+    async with await _client(db_session) as ac:
+        await ac.post(
+            "/wayforpay/callback",
+            content=_signed_callback(sub.order_reference, status="Voided", auth_code="v1", processing_date="1802"),
+        )
+
+    await db_session.refresh(sub)
+    assert sub.status is St.CANCELLED

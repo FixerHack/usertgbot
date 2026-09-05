@@ -56,6 +56,10 @@ APPROVED = "Approved"
 # "Refunded" and "Voided" are not failures to retry, and telling someone their
 # bank declined when their money was refunded is worse than saying nothing.
 DECLINED = "Declined"
+# The money went back to the payer. "Voided" is the same outcome reached by
+# cancelling an authorisation before it settles. Neither is retried, and both
+# mean the customer has paid nothing.
+REFUNDED = frozenset({"Refunded", "Voided"})
 
 # regularApi answers with a numeric code; these two both mean "accepted".
 _REGULAR_OK_CODES = {"1100", "4100"}

@@ -58,7 +58,10 @@ def _state_label(sub, lang: str) -> str:
 
 
 def _expiry_phrase(sub, lang: str) -> str:
-    if sub.expires_at is None or sub.status == "expired":
+    # "until <date>" only makes sense while something is still running. A
+    # cancelled plan stopped when it stopped; a finished one carries its date
+    # inside the state instead.
+    if sub.expires_at is None or sub.status in ("expired", "cancelled"):
         return ""
     return t(lang, "dash_expires", date=f"{_local(sub.expires_at):%d.%m.%Y}")
 

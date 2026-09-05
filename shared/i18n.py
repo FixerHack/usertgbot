@@ -729,6 +729,14 @@ _TR: dict[str, tuple[str, str, str]] = {
         "Возвращайтесь в бот — подтверждение придёт туда, как только банк подтвердит платёж.",
         "Head back to the bot — confirmation arrives there as soon as the bank confirms the payment.",
     ),
+    "pay_refunded": (
+        "↩️ Кошти за тариф <b>{title}</b> повернуто, підписку зупинено.\n"
+        "Якщо це помилка — напишіть у підтримку.",
+        "↩️ Средства за тариф <b>{title}</b> возвращены, подписка остановлена.\n"
+        "Если это ошибка — напишите в поддержку.",
+        "↩️ Your payment for <b>{title}</b> was refunded and the subscription has stopped.\n"
+        "If that looks wrong, contact support.",
+    ),
     "pay_renew_failed": (
         "⚠️ Не вдалося продовжити тариф <b>{title}</b> — банк відхилив списання.\n"
         "Спробу буде повторено завтра. Перевірте баланс або оплатіть вручну: 💳 Тарифи.",

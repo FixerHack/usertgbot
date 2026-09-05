@@ -216,6 +216,24 @@ async def record_payment_event(
     return event
 
 
+async def terminate(
+    session: AsyncSession, sub: Subscription, *, now: datetime | None = None, mandate_canceller=None
+) -> Subscription:
+    """End a subscription right now, and stop anything still billing for it.
+
+    Used when the money goes back to the payer. Leaving access running after a
+    refund gives the service away; leaving the recurring payment running
+    charges someone we have just repaid, which is worse. The status also locks
+    the row against being revived by a later callback.
+    """
+    now = _naive_utc(now)
+    sub.status = SubscriptionStatus.CANCELLED
+    sub.expires_at = now
+    await session.flush()
+    await _stop_mandates([sub], mandate_canceller or _default_mandate_canceller)
+    return sub
+
+
 async def extend(
     session: AsyncSession, sub: Subscription, *, days: int | None = None, now: datetime | None = None
 ) -> Subscription:

@@ -33,6 +33,7 @@ from db.session import get_session
 from management_bot import storage, subscriptions
 from management_bot.payment.wayforpay import (
     DECLINED,
+    REFUNDED,
     RegularSpec,
     WayForPayProvider,
     parse_callback_body,
@@ -250,6 +251,19 @@ def create_app(
             await db.commit()
             return JSONResponse(provider.callback_response(result.order_reference))
 
+        if result.transaction_status in REFUNDED:
+            # The payer has their money back, so the access goes with it — and
+            # so does the recurring payment, or we would be billing someone we
+            # just repaid.
+            logger.info(
+                "wayforpay callback: %s refunded (%s) — ending subscription %s",
+                result.order_reference, result.transaction_status, sub.id,
+            )
+            await subscriptions.terminate(db, sub)
+            await _notify(db, sub, "refunded", notifier)
+            await db.commit()
+            return JSONResponse(provider.callback_response(result.order_reference))
+
         renewal = sub.status is SubscriptionStatus.ACTIVE
         if result.approved and _amount_matches(result.amount, sub.amount_uah):
             if renewal:
@@ -309,6 +323,8 @@ async def _notify(db: AsyncSession, sub, kind: str, notifier) -> None:
             status = await storage.get_user_status(db, user.telegram_id)
             tail = t(lang, "sub_connect_hint") if not status.sessions else t(lang, "sub_ready")
             text = f"{t(lang, 'sub_success', title=title)}\n{tail}"
+        elif kind == "refunded":
+            text = t(lang, "pay_refunded", title=title)
         else:
             text = t(lang, "pay_renew_failed", title=title)
         await notifier.send_text(user.telegram_id, text)
