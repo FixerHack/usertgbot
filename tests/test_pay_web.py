@@ -360,3 +360,38 @@ async def test_done_page_links_back_to_the_bot(db_session):
     async with await _client(db_session, bot_username="useagentperbot") as ac:
         done = await ac.get("/done?lang=uk")
     assert "https://t.me/useagentperbot" in done.text
+
+
+async def test_an_abandoned_payment_is_not_reported_as_a_failed_renewal(db_session):
+    """Seen live: the gateway sends "Expired" when a payer closes the page.
+    On an active subscription that was being read as a declined renewal, and
+    the owner was told their bank refused a charge that never happened."""
+    sub = await _pending(db_session)
+    await subscriptions.activate(db_session, sub)
+    await db_session.commit()
+    notifier = _Notifier()
+
+    async with await _client(db_session, notifier=notifier) as ac:
+        r = await ac.post(
+            "/wayforpay/callback",
+            content=_signed_callback(sub.order_reference, status="Expired", auth_code="", processing_date="1701"),
+        )
+
+    assert r.json()["status"] == "accept"
+    assert notifier.sent == [], "nothing was declined, so nothing to warn about"
+
+
+async def test_a_real_decline_still_reaches_the_owner(db_session):
+    """The narrowing must not silence the case it was written for."""
+    sub = await _pending(db_session)
+    await subscriptions.activate(db_session, sub)
+    await db_session.commit()
+    notifier = _Notifier()
+
+    async with await _client(db_session, notifier=notifier) as ac:
+        await ac.post(
+            "/wayforpay/callback",
+            content=_signed_callback(sub.order_reference, status="Declined", auth_code="z", processing_date="1702"),
+        )
+
+    assert notifier.sent, "a bank refusal is exactly what the owner must hear about"

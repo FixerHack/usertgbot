@@ -51,6 +51,11 @@ _CALLBACK_SIGNATURE_FIELDS = (
 )
 
 APPROVED = "Approved"
+# The only status that means a bank actually refused a charge, and therefore
+# the only one WayForPay will retry. "Expired" (the payer walked away),
+# "Refunded" and "Voided" are not failures to retry, and telling someone their
+# bank declined when their money was refunded is worse than saying nothing.
+DECLINED = "Declined"
 
 # regularApi answers with a numeric code; these two both mean "accepted".
 _REGULAR_OK_CODES = {"1100", "4100"}

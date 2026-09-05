@@ -32,6 +32,7 @@ from db.models import SubscriptionStatus, User
 from db.session import get_session
 from management_bot import subscriptions
 from management_bot.payment.wayforpay import (
+    DECLINED,
     RegularSpec,
     WayForPayProvider,
     parse_callback_body,
@@ -252,10 +253,15 @@ def create_app(
             )
         else:
             logger.info(
-                "wayforpay callback: %s declined (%s / %s)",
+                "wayforpay callback: %s not approved (%s / %s)",
                 result.order_reference, result.transaction_status, result.reason,
             )
-            if renewal:
+            # Only a real bank refusal is worth alarming the owner about: it is
+            # the one the gateway retries, and the one that ends the
+            # subscription if it keeps failing. An abandoned payment page
+            # ("Expired") is not a failed renewal, and saying so sends someone
+            # to check a card balance that was never touched.
+            if renewal and result.transaction_status == DECLINED:
                 await _notify(db, sub, "renew_failed", notifier)
 
         await db.commit()
