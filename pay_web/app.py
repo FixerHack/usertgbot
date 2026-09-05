@@ -30,7 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import SubscriptionStatus, User
 from db.session import get_session
-from management_bot import subscriptions
+from management_bot import storage, subscriptions
 from management_bot.payment.wayforpay import (
     DECLINED,
     RegularSpec,
@@ -289,7 +289,12 @@ async def _notify(db: AsyncSession, sub, kind: str, notifier) -> None:
         lang = resolve_lang(getattr(user, "language_code", None))
         title = get_plan(sub.tariff).title
         if kind == "paid":
-            text = t(lang, "sub_success", title=title) + "\n" + t(lang, "sub_connect_hint")
+            # The "now connect your account" nudge is noise once an account is
+            # connected, and it points at a settings screen whose button then
+            # says the opposite ("Відв'язати").
+            status = await storage.get_user_status(db, user.telegram_id)
+            tail = t(lang, "sub_connect_hint") if not status.sessions else t(lang, "sub_ready")
+            text = f"{t(lang, 'sub_success', title=title)}\n{tail}"
         else:
             text = t(lang, "pay_renew_failed", title=title)
         await notifier.send_text(user.telegram_id, text)

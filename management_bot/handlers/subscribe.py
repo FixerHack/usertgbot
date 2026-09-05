@@ -31,7 +31,7 @@ from aiogram.types import (
 
 from connect_web.server import connect_server
 from db.session import get_session
-from management_bot import keyboards, subscriptions
+from management_bot import keyboards, storage, subscriptions
 from management_bot.config import settings
 from management_bot.payment import build_wayforpay
 from management_bot.payment.crypto_pay import CryptoPayProvider
@@ -58,6 +58,17 @@ def _tariff_image(tariff_id: str) -> Path | None:
         if path.exists():
             return path
     return None
+
+
+async def _success_text(db, telegram_id: int, lang: str, title: str) -> str:
+    """The "now connect your account" nudge is noise for someone who already
+    has one connected — worse, it points at ⚙️ Налаштування where the button
+    says the opposite ("Відв'язати")."""
+    status = await storage.get_user_status(db, telegram_id)
+    text = t(lang, "sub_success", title=title)
+    if not status.sessions:
+        text = f"{text}\n{t(lang, 'sub_connect_hint')}"
+    return text
 
 
 def _crypto() -> CryptoPayProvider | None:
@@ -252,10 +263,8 @@ async def _grant_free(callback: CallbackQuery, lang: str, plan, tariff_id: str, 
         )
         await subscriptions.activate(db, sub)
         await db.commit()
-    await callback.message.answer(
-        t(lang, "sub_success", title=plan.title) + "\n" + t(lang, "sub_connect_hint"),
-        reply_markup=keyboards.main_menu(lang),
-    )
+        text = await _success_text(db, user.id, lang, plan.title)
+    await callback.message.answer(text, reply_markup=keyboards.main_menu(lang))
     await callback.answer()
 
 
@@ -318,10 +327,8 @@ async def on_successful_payment(message: Message) -> None:
         await subscriptions.activate(db, sub)
         await db.commit()
         title = get_plan(sub.tariff).title
-    await message.answer(
-        t(lang, "sub_success", title=title) + "\n" + t(lang, "sub_connect_hint"),
-        reply_markup=keyboards.main_menu(lang),
-    )
+        text = await _success_text(db, message.from_user.id, lang, title)
+    await message.answer(text, reply_markup=keyboards.main_menu(lang))
 
 
 # --- Crypto Pay ------------------------------------------------------------
@@ -404,8 +411,15 @@ async def on_check_crypto(callback: CallbackQuery) -> None:
         await subscriptions.activate(db, sub)
         await db.commit()
         title = get_plan(sub.tariff).title
+        needs_hint = not (await storage.get_user_status(db, callback.from_user.id)).sessions
     await _edit(callback.message, t(lang, "sub_success", title=title))
-    await callback.message.answer(t(lang, "sub_connect_hint"), reply_markup=keyboards.main_menu(lang))
+    # The card and Stars paths send one message; this one already replaced the
+    # invoice above, so the keyboard has to ride on a second message either
+    # way — with the nudge only when there is nothing connected yet.
+    await callback.message.answer(
+        t(lang, "sub_connect_hint") if needs_hint else t(lang, "sub_ready"),
+        reply_markup=keyboards.main_menu(lang),
+    )
     await callback.answer()
 
 

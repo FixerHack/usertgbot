@@ -89,3 +89,16 @@ def test_an_unknown_state_is_shown_rather_than_swallowed():
     """If the enum grows, printing the raw value is a louder failure than a
     blank space where the state should be."""
     assert "something_new" in dashboard.build_start_text(_sub("something_new"), NOW, "uk")
+
+
+def test_dates_are_shown_in_kyiv_time_not_utc():
+    """Between midnight and 03:00 Kyiv the UTC date is still yesterday, so the
+    dashboard cheerfully greeted people with the wrong day."""
+    from datetime import datetime, timezone
+
+    just_after_midnight_kyiv = datetime(2026, 9, 5, 0, 30, tzinfo=timezone.utc)  # 03:30 Kyiv
+    late_evening_utc = datetime(2026, 9, 4, 22, 30, tzinfo=timezone.utc)          # 01:30 Kyiv, 5 Sep
+
+    status = UserStatus(known=True, subscription=None, sessions=[])
+    assert "05.09.2026" in dashboard.build_start_text(status, just_after_midnight_kyiv, "uk")
+    assert "05.09.2026" in dashboard.build_start_text(status, late_evening_utc, "uk")

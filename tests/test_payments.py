@@ -121,3 +121,36 @@ async def test_stars_and_crypto_keep_their_own_rows():
     stars_row, usd_row = kb.inline_keyboard[2], kb.inline_keyboard[3]
     assert all(b.callback_data.endswith(":stars") for b in stars_row)
     assert all(b.callback_data.endswith(":crypto") for b in usd_row)
+
+
+# --- the "connect your account" nudge --------------------------------------
+
+
+async def test_success_message_skips_the_connect_nudge_when_already_connected(db_session):
+    """It used to be appended unconditionally, pointing someone with a live
+    account at a settings screen whose button says the opposite."""
+    from management_bot import storage
+    from management_bot.handlers.subscribe import _success_text
+    from shared.i18n import t
+
+    await storage.upsert_user(db_session, 3001)
+    await storage.save_session(
+        db_session, telegram_id=3001, phone_number="+380000000000", session_string="s"
+    )
+    await db_session.commit()
+
+    text = await _success_text(db_session, 3001, "uk", "Pro")
+    assert t("uk", "sub_connect_hint") not in text
+    assert "Pro" in text
+
+
+async def test_success_message_keeps_the_nudge_for_someone_with_no_account(db_session):
+    from management_bot import storage
+    from management_bot.handlers.subscribe import _success_text
+    from shared.i18n import t
+
+    await storage.upsert_user(db_session, 3002)
+    await db_session.commit()
+
+    text = await _success_text(db_session, 3002, "uk", "Pro")
+    assert t("uk", "sub_connect_hint") in text
