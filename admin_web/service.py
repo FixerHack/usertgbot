@@ -278,6 +278,15 @@ async def revoke_subscription(session: AsyncSession, telegram_id: int, *, now: d
     for sub in result.scalars():
         sub.status = SubscriptionStatus.CANCELLED
         count += 1
+        if sub.auto_renew and sub.order_reference:
+            # Revoking here stops the access, not the billing. The panel holds
+            # no payment credentials, so this has to be said out loud rather
+            # than left for someone to discover on next month's statement.
+            logger.warning(
+                "admin revoked subscription %s, whose recurring payment (%s) is still live — "
+                "cancel it in the gateway or the card keeps being charged",
+                sub.id, sub.order_reference,
+            )
     await session.flush()
     return count
 
