@@ -102,3 +102,148 @@ async def test_a_reference_that_merely_parses_cannot_claim_a_subscription(db_ses
     assert await subscriptions.get_by_order_reference(db_session, sub.order_reference) is sub
     # same id, different (forged) timestamp
     assert await subscriptions.get_by_order_reference(db_session, f"sub-{sub.id}-1699999999") is None
+
+
+# --- changing plan mid-period ----------------------------------------------
+
+
+class _Canceller:
+    """Stands in for the gateway call that stops a recurring payment."""
+
+    def __init__(self, fail: bool = False):
+        self.calls: list[str] = []
+        self.fail = fail
+
+    async def __call__(self, order_reference: str) -> None:
+        self.calls.append(order_reference)
+        if self.fail:
+            raise RuntimeError("gateway said no")
+
+
+async def _sub(db, telegram_id, tariff, *, days=30, active=False, now=None, auto_renew=False, ref=None):
+    from management_bot import subscriptions
+
+    sub = await subscriptions.create_pending(
+        db, telegram_id=telegram_id, tariff=tariff, provider_name="wayforpay",
+        period_days=days, auto_renew=auto_renew,
+    )
+    sub.order_reference = ref
+    if active:
+        await subscriptions.activate(db, sub, now=now, mandate_canceller=_Canceller())
+    await db.commit()
+    return sub
+
+
+async def test_buying_pro_mid_standard_replaces_it(db_session):
+    """One user, one plan. Overlapping subscriptions leave it to sort order to
+    decide which one applies, which is not something a paying customer should
+    be exposed to."""
+    from management_bot import subscriptions
+
+    start = datetime(2026, 9, 1)
+    standard = await _sub(db_session, 4001, Tariff.STANDARD, active=True, now=start)
+
+    pro = await subscriptions.create_pending(
+        db_session, telegram_id=4001, tariff=Tariff.PRO, provider_name="wayforpay", period_days=30
+    )
+    canceller = _Canceller()
+    await subscriptions.activate(db_session, pro, now=datetime(2026, 9, 15), mandate_canceller=canceller)
+    await db_session.commit()
+
+    await db_session.refresh(standard)
+    assert standard.status is SubscriptionStatus.CANCELLED
+    assert pro.status is SubscriptionStatus.ACTIVE
+    # a full period from the moment of purchase, no proration either way
+    assert pro.started_at == datetime(2026, 9, 15)
+    assert pro.expires_at == datetime(2026, 10, 15)
+
+
+async def test_the_gate_sees_exactly_one_plan_after_a_change(db_session):
+    from db import queries
+    from management_bot import subscriptions, storage
+
+    await _sub(db_session, 4002, Tariff.STANDARD, active=True, now=datetime(2026, 9, 1))
+    pro = await subscriptions.create_pending(
+        db_session, telegram_id=4002, tariff=Tariff.PRO, provider_name="wayforpay", period_days=30
+    )
+    await subscriptions.activate(db_session, pro, now=datetime(2026, 9, 15), mandate_canceller=_Canceller())
+    await db_session.commit()
+
+    user = await storage.upsert_user(db_session, 4002)
+    active = await queries.get_active_subscription_for_user(db_session, user.id)
+    assert active is not None and active.tariff == "pro"
+
+
+async def test_rebuying_the_same_plan_keeps_the_days_already_paid_for(db_session):
+    """Replacing is right for a tariff CHANGE; applied to the same plan it
+    would quietly burn whatever was left of the month."""
+    from management_bot import subscriptions
+
+    old = await _sub(db_session, 4003, Tariff.PRO, active=True, now=datetime(2026, 9, 1))
+    assert old.expires_at == datetime(2026, 10, 1)
+
+    again = await subscriptions.create_pending(
+        db_session, telegram_id=4003, tariff=Tariff.PRO, provider_name="wayforpay", period_days=30
+    )
+    await subscriptions.activate(db_session, again, now=datetime(2026, 9, 21), mandate_canceller=_Canceller())
+    await db_session.commit()
+
+    # 30 new days plus the 10 still owed on the old one: the old period ran to
+    # 1 Oct, so a month bought on 21 Sep must land on 31 Oct, not 21 Oct.
+    assert again.expires_at == datetime(2026, 10, 31)
+
+
+async def test_a_superseded_card_mandate_is_cancelled(db_session):
+    """The expensive half: a retired plan whose recurring payment keeps
+    charging bills someone twice for one subscription."""
+    from management_bot import subscriptions
+
+    await _sub(
+        db_session, 4004, Tariff.STANDARD, active=True, now=datetime(2026, 9, 1),
+        auto_renew=True, ref="sub-1-1700",
+    )
+    pro = await subscriptions.create_pending(
+        db_session, telegram_id=4004, tariff=Tariff.PRO, provider_name="wayforpay", period_days=30
+    )
+    canceller = _Canceller()
+    await subscriptions.activate(db_session, pro, now=datetime(2026, 9, 15), mandate_canceller=canceller)
+    await db_session.commit()
+
+    assert canceller.calls == ["sub-1-1700"]
+
+
+async def test_a_mandate_we_failed_to_cancel_stays_flagged(db_session):
+    """Clearing the flag on a gateway failure would hide a card that is still
+    being charged — the same rule the cancel button follows."""
+    from management_bot import subscriptions
+
+    standard = await _sub(
+        db_session, 4005, Tariff.STANDARD, active=True, now=datetime(2026, 9, 1),
+        auto_renew=True, ref="sub-2-1700",
+    )
+    pro = await subscriptions.create_pending(
+        db_session, telegram_id=4005, tariff=Tariff.PRO, provider_name="wayforpay", period_days=30
+    )
+    await subscriptions.activate(
+        db_session, pro, now=datetime(2026, 9, 15), mandate_canceller=_Canceller(fail=True)
+    )
+    await db_session.commit()
+
+    await db_session.refresh(standard)
+    assert standard.status is SubscriptionStatus.CANCELLED
+    assert standard.auto_renew is True, "still live at the gateway, so still flagged here"
+
+
+async def test_an_already_expired_plan_is_left_alone(db_session):
+    """Retiring history rewrites what a user's account says happened."""
+    from management_bot import subscriptions
+
+    old = await _sub(db_session, 4006, Tariff.STANDARD, active=True, now=datetime(2026, 1, 1))
+    pro = await subscriptions.create_pending(
+        db_session, telegram_id=4006, tariff=Tariff.PRO, provider_name="wayforpay", period_days=30
+    )
+    await subscriptions.activate(db_session, pro, now=datetime(2026, 9, 15), mandate_canceller=_Canceller())
+    await db_session.commit()
+
+    await db_session.refresh(old)
+    assert old.status is SubscriptionStatus.ACTIVE, "long past its expiry; not ours to relabel"

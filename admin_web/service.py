@@ -6,6 +6,7 @@ session and commit.
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime, timedelta, timezone
@@ -13,10 +14,13 @@ from datetime import date, datetime, timedelta, timezone
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from db import queries
 from db.models import CheckUsage, ReferralLink, SavedMessage, Session, Subscription, SubscriptionStatus, User
 from shared import referrals
 from shared.referrals import ReferralLinkStats
 from shared.tariffs import PLANS, Tariff
+
+logger = logging.getLogger(__name__)
 
 
 def _naive_utc(now: datetime | None = None) -> datetime:
@@ -242,6 +246,21 @@ async def grant_subscription(
     )
     session.add(sub)
     await session.flush()
+    # An admin grant is a subscription like any other: one user, one plan.
+    # Without this it would sit alongside whatever the user already had, and
+    # which one applied would come down to sort order.
+    retired = await queries.supersede_other_active(
+        session, user_id=user.id, keep_id=sub.id, now=now.replace(tzinfo=timezone.utc)
+    )
+    for old in retired:
+        if old.auto_renew and old.order_reference:
+            # Deliberately not cancelled here: the admin panel has no payment
+            # credentials, and doing it silently from a support tool is worse
+            # than saying it out loud.
+            logger.warning(
+                "admin grant retired subscription %s, whose recurring payment (%s) is still live",
+                old.id, old.order_reference,
+            )
     return sub
 
 

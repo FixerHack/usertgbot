@@ -395,3 +395,22 @@ async def test_a_real_decline_still_reaches_the_owner(db_session):
         )
 
     assert notifier.sent, "a bank refusal is exactly what the owner must hear about"
+
+
+async def test_money_for_a_retired_plan_never_revives_it(db_session):
+    """A superseded mandate that we failed to cancel keeps charging. Treating
+    that money as a new purchase would silently replace whatever plan the user
+    moved to — the charge is acknowledged and made loud instead."""
+    from db.models import SubscriptionStatus as St
+
+    sub = await _pending(db_session)
+    sub.status = St.CANCELLED
+    await db_session.commit()
+
+    async with await _client(db_session) as ac:
+        r = await ac.post("/wayforpay/callback", content=_signed_callback(sub.order_reference))
+
+    assert r.json()["status"] == "accept"  # or the gateway retries forever
+    await db_session.refresh(sub)
+    assert sub.status is St.CANCELLED
+    assert sub.expires_at is None

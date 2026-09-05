@@ -7,6 +7,7 @@ no changes here or in the handler.
 
 from __future__ import annotations
 
+import logging
 import re
 import time
 from datetime import datetime, timedelta, timezone
@@ -15,10 +16,13 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from db import queries
 from db.models import PaymentEvent, Subscription, SubscriptionStatus
 from management_bot.payment.base import PaymentProvider
 from management_bot.storage import upsert_user
 from shared.tariffs import Tariff, get_plan
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_PERIOD_DAYS = 30
 
@@ -78,19 +82,76 @@ async def get_subscription(session: AsyncSession, sub_id: int) -> Subscription |
     return (await session.execute(select(Subscription).where(Subscription.id == sub_id))).scalar_one_or_none()
 
 
+async def _default_mandate_canceller(order_reference: str) -> None:
+    from management_bot.payment import build_wayforpay
+
+    provider = build_wayforpay()
+    if provider is None:
+        raise RuntimeError("wayforpay is not configured")
+    await provider.remove_regular(order_reference)
+
+
+async def _stop_mandates(retired: list[Subscription], canceller) -> None:
+    """Stop anything still set to charge for a subscription we just retired.
+
+    The flag is cleared only after the gateway confirms, same rule as the
+    user-facing cancel button: marking it off locally while the card keeps
+    being billed is the one outcome worth going out of the way to avoid. A
+    failure here is loud in the log and leaves auto_renew set, which is what
+    the callback guard keys off.
+    """
+    for old in retired:
+        if not (old.auto_renew and old.order_reference):
+            continue
+        try:
+            await canceller(old.order_reference)
+            old.auto_renew = False
+        except Exception:
+            logger.exception(
+                "MANDATE STILL LIVE: subscription %s was superseded but its recurring payment "
+                "(%s) could not be cancelled — the card may keep being charged",
+                old.id, old.order_reference,
+            )
+
+
 async def activate(
-    session: AsyncSession, sub: Subscription, *, now: datetime | None = None, period_days: int | None = None
+    session: AsyncSession,
+    sub: Subscription,
+    *,
+    now: datetime | None = None,
+    period_days: int | None = None,
+    mandate_canceller=None,
 ) -> Subscription:
-    """`period_days` defaults to whatever was set on the row at
-    `create_pending` time (the duration the buyer actually picked) — a
-    Stars invoice payload can't carry it, so it has to round-trip via the
-    row itself. Pass it explicitly only to override that."""
+    """Make this the user's one live subscription.
+
+    `period_days` defaults to whatever was set on the row at `create_pending`
+    time (the duration the buyer actually picked) — a Stars invoice payload
+    can't carry it, so it has to round-trip via the row itself.
+
+    Any other live subscription is retired here: one user, one plan. Moving
+    from Standard to Pro mid-month replaces the old plan rather than layering
+    on top of it, and the new one runs a full period from now — no proration,
+    no discount. Re-buying the SAME plan is the one exception: the days
+    already paid for carry over, because losing them is not a rule anyone
+    agreed to.
+    """
     now = _naive_utc(now)
     days = period_days if period_days is not None else (sub.period_days or DEFAULT_PERIOD_DAYS)
+
+    retired = await queries.supersede_other_active(
+        session, user_id=sub.user_id, keep_id=sub.id, now=now.replace(tzinfo=timezone.utc)
+    )
+    carry_over = 0
+    for old in retired:
+        if old.tariff == sub.tariff and old.expires_at is not None and old.expires_at > now:
+            carry_over = max(carry_over, (old.expires_at - now).days)
+
     sub.status = SubscriptionStatus.ACTIVE
     sub.started_at = now
-    sub.expires_at = now + timedelta(days=days)
+    sub.expires_at = now + timedelta(days=days + carry_over)
     await session.flush()
+
+    await _stop_mandates(retired, mandate_canceller or _default_mandate_canceller)
     return sub
 
 

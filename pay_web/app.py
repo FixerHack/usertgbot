@@ -236,6 +236,20 @@ def create_app(
             await db.commit()
             return JSONResponse(provider.callback_response(result.order_reference))
 
+        if sub.status is SubscriptionStatus.CANCELLED:
+            # This plan was retired — either the user cancelled it or they
+            # moved to another tariff — yet money still arrived for it. Never
+            # bring it back: doing so would silently replace whatever plan
+            # they are on now. Acknowledge so the gateway stops retrying, and
+            # make the stuck mandate loud enough to find.
+            logger.error(
+                "wayforpay callback: charge on RETIRED subscription %s (%s, %s %s) — "
+                "the recurring payment behind it is still live and needs cancelling",
+                sub.id, result.order_reference, result.amount, result.currency,
+            )
+            await db.commit()
+            return JSONResponse(provider.callback_response(result.order_reference))
+
         renewal = sub.status is SubscriptionStatus.ACTIVE
         if result.approved and _amount_matches(result.amount, sub.amount_uah):
             if renewal:

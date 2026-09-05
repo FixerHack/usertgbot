@@ -123,17 +123,56 @@ async def deactivate_session(
 async def get_active_subscription_for_user(
     session: AsyncSession, user_id: int, *, now: datetime | None = None
 ) -> Subscription | None:
-    """Active, non-expired subscription for an internal user id (latest first)."""
+    """Active, non-expired subscription for an internal user id (latest first).
+
+    Ordered by id rather than created_at: two rows written in the same second
+    tie on the timestamp, and with tariff changes and renewals that is no
+    longer a theoretical case.
+    """
     now = now or _utcnow()
     result = await session.execute(
         select(Subscription)
         .where(Subscription.user_id == user_id, Subscription.status == SubscriptionStatus.ACTIVE)
-        .order_by(Subscription.created_at.desc())
+        .order_by(Subscription.id.desc())
     )
     for sub in result.scalars():
         if sub.expires_at is None or as_aware(sub.expires_at) > now:
             return sub
     return None
+
+
+async def supersede_other_active(
+    session: AsyncSession, *, user_id: int, keep_id: int, now: datetime | None = None
+) -> list[Subscription]:
+    """Retire every other live subscription of this user, and say which.
+
+    One user, one plan. Buying Pro halfway through a Standard month replaces
+    it outright — the new plan runs a full period from now, and the old row
+    stops being active instead of sitting alongside it. Without this the two
+    overlap and which one applies depends on sort order, which is not a thing
+    a paying customer should be exposed to.
+
+    Returns the retired rows so the caller can stop anything still set to
+    charge for them; a superseded card mandate that keeps billing is the
+    expensive half of this problem.
+    """
+    now = now or _utcnow()
+    result = await session.execute(
+        select(Subscription).where(
+            Subscription.user_id == user_id,
+            Subscription.id != keep_id,
+            Subscription.status == SubscriptionStatus.ACTIVE,
+        )
+    )
+    retired = []
+    for sub in result.scalars():
+        if sub.expires_at is not None and as_aware(sub.expires_at) <= now:
+            continue  # already over; leave its history alone
+        sub.status = SubscriptionStatus.CANCELLED
+        retired.append(sub)
+    if retired:
+        await session.flush()
+    return retired
 
 
 async def get_active_subscription_by_telegram_id(
