@@ -313,6 +313,51 @@ class ConnectToken(Base):
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
+class ChatRecording(Base):
+    """One `.save` … `.unsave` span in a chat.
+
+    A recording is a row rather than a flag on the chat so the same chat can be
+    recorded again later without the two archives running together, and so an
+    unfinished one is visible after a restart instead of silently lost.
+    """
+
+    __tablename__ = "chat_recordings"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    owner_user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    chat_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    chat_title: Mapped[str | None] = mapped_column(default=None)
+    started_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    # NULL while it is still running — that is what "active" means here.
+    stopped_at: Mapped[datetime | None] = mapped_column(default=None)
+
+    messages: Mapped[list["RecordedMessage"]] = relationship(
+        back_populates="recording", cascade="all, delete-orphan"
+    )
+
+
+class RecordedMessage(Base):
+    """One line of an archive.
+
+    Text and a label for anything that is not text — a recording is a
+    transcript, not a backup. Storing the media would turn a chat archive into
+    an unbounded pile of blobs for a feature whose output is a .txt file.
+    """
+
+    __tablename__ = "recorded_messages"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    recording_id: Mapped[int] = mapped_column(
+        ForeignKey("chat_recordings.id", ondelete="CASCADE"), index=True
+    )
+    sent_at: Mapped[datetime] = mapped_column()
+    sender: Mapped[str] = mapped_column()      # display label, resolved once at capture
+    is_outgoing: Mapped[bool] = mapped_column(default=False)
+    text: Mapped[str] = mapped_column(default="")
+
+    recording: Mapped["ChatRecording"] = relationship(back_populates="messages")
+
+
 class MutedUser(Base):
     """Someone the owner has silenced in one chat.
 

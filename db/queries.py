@@ -10,11 +10,13 @@ from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from math import ceil
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import (
+    ChatRecording,
     MutedUser,
+    RecordedMessage,
     CheckUsage,
     IgnoredChat,
     MediaBlob,
@@ -537,3 +539,75 @@ async def is_chat_ignored(session: AsyncSession, owner_user_id: int, chat_id: in
         )
     )
     return result.scalar_one_or_none() is not None
+
+
+# --- chat recordings -------------------------------------------------------
+
+# A transcript is meant to be read. Past this many lines it is a database
+# problem wearing a .txt file, so recording stops and says so rather than
+# growing quietly.
+MAX_RECORDED_MESSAGES = 20_000
+
+
+async def get_active_recordings(session: AsyncSession, owner_user_id: int) -> list[ChatRecording]:
+    result = await session.execute(
+        select(ChatRecording).where(
+            ChatRecording.owner_user_id == owner_user_id,
+            ChatRecording.stopped_at.is_(None),
+        )
+    )
+    return list(result.scalars())
+
+
+async def start_recording(
+    session: AsyncSession, *, owner_user_id: int, chat_id: int, chat_title: str | None
+) -> ChatRecording:
+    row = ChatRecording(owner_user_id=owner_user_id, chat_id=chat_id, chat_title=chat_title)
+    session.add(row)
+    await session.flush()
+    return row
+
+
+async def stop_recording(session: AsyncSession, recording_id: int, *, now: datetime | None = None) -> None:
+    row = await session.get(ChatRecording, recording_id)
+    if row is not None and row.stopped_at is None:
+        row.stopped_at = (now or _utcnow()).astimezone(timezone.utc).replace(tzinfo=None)
+        await session.flush()
+
+
+async def add_recorded_message(
+    session: AsyncSession,
+    *,
+    recording_id: int,
+    sent_at: datetime,
+    sender: str,
+    is_outgoing: bool,
+    text: str,
+) -> None:
+    session.add(
+        RecordedMessage(
+            recording_id=recording_id,
+            sent_at=sent_at.astimezone(timezone.utc).replace(tzinfo=None) if sent_at.tzinfo else sent_at,
+            sender=sender,
+            is_outgoing=is_outgoing,
+            text=text,
+        )
+    )
+    await session.flush()
+
+
+async def count_recorded(session: AsyncSession, recording_id: int) -> int:
+    return await session.scalar(
+        select(func.count()).select_from(RecordedMessage).where(RecordedMessage.recording_id == recording_id)
+    ) or 0
+
+
+async def get_recorded_messages(session: AsyncSession, recording_id: int) -> list[RecordedMessage]:
+    result = await session.execute(
+        select(RecordedMessage)
+        .where(RecordedMessage.recording_id == recording_id)
+        # id, not sent_at: two messages in the same second are common in a
+        # chat, and the order they arrived in is the order they were said.
+        .order_by(RecordedMessage.id)
+    )
+    return list(result.scalars())

@@ -65,7 +65,7 @@ def captured(monkeypatch):
             pass
 
     monkeypatch.setattr(worker, "ManagerNotifier", _FakeNotifier)
-    for module in (worker.commands, worker.autosave, worker.autoresponder, worker.viewonce, worker.mute):
+    for module in (worker.commands, worker.autosave, worker.autoresponder, worker.viewonce, worker.mute, worker.record):
         monkeypatch.setattr(module, "register", lambda client, ctx: None)
     # The mute cache is primed from the database at startup; these tests are
     # about a dying session, not about what it had muted.
@@ -73,6 +73,7 @@ def captured(monkeypatch):
         return None
 
     monkeypatch.setattr(worker.mute, "load_mutes", _no_mutes)
+    monkeypatch.setattr(worker.record, "load_recordings", _no_mutes)
     return sent
 
 

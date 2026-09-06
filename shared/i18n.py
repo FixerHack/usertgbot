@@ -920,6 +920,43 @@ _TR: dict[str, tuple[str, str, str]] = {
         "❌ Количество должно быть от 1 до {max}: .send 10 текст",
         "❌ Count must be between 1 and {max}: .send 10 text",
     ),
+    # --- .save / .unsave ---
+    "rec_started": (
+        "💾 Запис чату почато. Зупинити — .unsave",
+        "💾 Запись чата начата. Остановить — .unsave",
+        "💾 Recording this chat. Stop with .unsave",
+    ),
+    "rec_already": (
+        "💾 Цей чат уже записується.",
+        "💾 Этот чат уже записывается.",
+        "💾 This chat is already being recorded.",
+    ),
+    "rec_not_running": (
+        "Цей чат не записується.",
+        "Этот чат не записывается.",
+        "This chat is not being recorded.",
+    ),
+    "rec_stopped": (
+        "📁 Запис зупинено, {count} повідомлень. Файл — у боті.",
+        "📁 Запись остановлена, {count} сообщений. Файл — в боте.",
+        "📁 Recording stopped, {count} messages. The file is in the bot.",
+    ),
+    "rec_undelivered": (
+        "📁 Запис зупинено, {count} повідомлень. Файл не вдалося надіслати — "
+        "відкрийте чат з менеджер-ботом і спробуйте ще раз.",
+        "📁 Запись остановлена, {count} сообщений. Файл не удалось отправить — "
+        "откройте чат с менеджер-ботом и попробуйте снова.",
+        "📁 Recording stopped, {count} messages. The file could not be sent — "
+        "open the chat with the manager bot and try again.",
+    ),
+    "rec_ready": (
+        "📁 Архів чату {chat} — {count} повідомлень.",
+        "📁 Архив чата {chat} — {count} сообщений.",
+        "📁 Archive of {chat} — {count} messages.",
+    ),
+    "rec_archive_header": ("Архів чату: {chat}", "Архив чата: {chat}", "Chat archive: {chat}"),
+    "rec_me": ("Я", "Я", "Me"),
+    "feat_record": ("💾 .save — запис чату", "💾 .save — запись чата", "💾 .save — chat recording"),
     "ub_send_hourly": (
         "⏳ Ліміт: {limit} розсилок на годину. Наступна — через {minutes} хв.",
         "⏳ Лимит: {limit} рассылок в час. Следующая — через {minutes} мин.",

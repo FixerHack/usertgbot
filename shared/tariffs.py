@@ -35,6 +35,7 @@ class TariffPlan:
     # quietly become "unlimited, just in smaller pieces".
     send_max_per_hour: int = 0
     has_mute: bool = False           # .mute / .unmute
+    has_record: bool = False         # .save / .unsave — transcribe a chat
     available: bool = True     # False => shown as "in development", not purchasable
 
     # NOTE: the human-readable feature bullets live in shared.i18n._FEATURES,
@@ -78,6 +79,7 @@ PLANS: dict[Tariff, TariffPlan] = {
         send_max_count=100,
         send_max_per_hour=10,
         has_mute=True,
+        has_record=True,
     ),
 }
 
@@ -106,6 +108,8 @@ def tariff_grants_command(tariff: Tariff | str, command: str) -> bool:
         return plan.has_send
     if command in ("mute", "unmute"):
         return plan.has_mute
+    if command in ("save", "unsave"):
+        return plan.has_record
     return command in BASE_COMMANDS
 
 

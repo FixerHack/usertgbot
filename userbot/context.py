@@ -24,3 +24,6 @@ class WorkerContext:
     # (chat_id, user_id) -> until (None = until .unmute). Checked on every
     # incoming message, so it lives here rather than behind a query.
     muted: dict[tuple[int, int], datetime | None] = field(default_factory=dict)
+    # chat_id -> recording id, for the same reason: the collector runs on
+    # every message in every chat.
+    recording: dict[int, int] = field(default_factory=dict)
