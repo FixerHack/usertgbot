@@ -282,3 +282,21 @@ async def test_a_command_that_could_not_run_still_clears_itself(db_session, owne
     event = _command_event(chat_id=-100, private=False)
     await _run_command(db_session, owner, monkeypatch, "handle_mute", event)
     assert event.deleted == [1]
+
+
+async def test_a_switched_off_mute_still_clears_its_command(db_session, owner, monkeypatch):
+    """Doing nothing is not the same as leaving no trace: a bare `.mute` in a
+    client's chat tells them what was attempted."""
+    from db import queries
+    from shared.settings_schema import Features
+
+    features = Features(mute=False)
+    await queries.set_features(db_session, owner.id, features.to_dict())
+    await db_session.commit()
+
+    event = _command_event(chat_id=555)
+    ctx = await _run_command(db_session, owner, monkeypatch, "handle_mute", event)
+
+    assert ctx.muted == {}, "switched off means it does not run"
+    assert event.responses == [], "and says nothing"
+    assert event.deleted == [1], "but still takes the command off the screen"

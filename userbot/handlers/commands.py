@@ -105,6 +105,7 @@ def register(client: TelegramClient, ctx: WorkerContext) -> None:
     @client.on(events.NewMessage(outgoing=True, pattern=SEND_RE))
     async def handle_send(event: events.NewMessage.Event) -> None:
         if not await _feature_enabled(ctx, "send"):
+            await clear_command(event)
             return
         gate = await _gate(event, ctx, "send")
         if gate is None:
@@ -223,6 +224,20 @@ async def _do_check(event: events.NewMessage.Event, ctx: WorkerContext, gate) ->
     await event.delete()
     if not await notify_owner(ctx, note):
         await event.respond(note)
+
+
+async def clear_command(event) -> None:
+    """Take a recognised command off the screen.
+
+    Every dot-command is typed in a chat with someone else, so the command
+    itself is the one thing that must not linger there — including when it
+    does nothing, because a switched-off `.mute` still tells the other side
+    what was attempted.
+    """
+    try:
+        await event.delete()
+    except Exception:
+        logger.debug("could not remove a command message", exc_info=True)
 
 
 async def _notice(client: TelegramClient, chat_id: int, text: str, *, delay: float = 2.0) -> None:

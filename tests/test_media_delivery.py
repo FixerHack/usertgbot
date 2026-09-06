@@ -364,6 +364,7 @@ async def test_send_can_be_switched_off(db_session, owner, monkeypatch):
     """The tariff decides whether .send exists at all; this decides whether
     the owner wants it. Before, only the first check existed."""
     assert await _run_send(db_session, owner, monkeypatch, enabled=False) == []
+    assert _run_send.last_event.deleted == [1], "and the command does not linger either"
 
 
 async def test_send_still_runs_while_the_switch_is_on(db_session, owner, monkeypatch):
