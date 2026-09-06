@@ -150,8 +150,16 @@ class Features:
     check: bool = True          # .check
     viewonce_photo: bool = True     # capture one-time photos
     viewonce_voice: bool = True     # capture one-time voice messages
+    viewonce_video: bool = True     # capture one-time videos and video notes
+    send: bool = True               # .send — bulk-post N copies (Pro/Premium)
 
-    _FIELDS = ("deleted", "edited", "info", "me", "ban", "check", "viewonce_photo", "viewonce_voice")
+    # New fields default to True and `from_dict` fills anything absent, so a
+    # settings row written before a switch existed keeps today's behaviour
+    # rather than silently turning the feature off.
+    _FIELDS = (
+        "deleted", "edited", "info", "me", "ban", "check",
+        "viewonce_photo", "viewonce_voice", "viewonce_video", "send",
+    )
 
     def to_dict(self) -> dict:
         return {name: getattr(self, name) for name in self._FIELDS}

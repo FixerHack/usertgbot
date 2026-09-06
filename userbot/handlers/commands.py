@@ -104,6 +104,8 @@ def register(client: TelegramClient, ctx: WorkerContext) -> None:
 
     @client.on(events.NewMessage(outgoing=True, pattern=SEND_RE))
     async def handle_send(event: events.NewMessage.Event) -> None:
+        if not await _feature_enabled(ctx, "send"):
+            return
         gate = await _gate(event, ctx, "send")
         if gate is None:
             return

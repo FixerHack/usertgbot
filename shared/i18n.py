@@ -776,6 +776,8 @@ _TR: dict[str, tuple[str, str, str]] = {
     "feat_check": (".check — перевірка", ".check — проверка", ".check — lookup"),
     "feat_viewonce_photo": ("👁 Одноразові фото", "👁 Одноразовые фото", "👁 One-time photos"),
     "feat_viewonce_voice": ("🎙 Одноразові голосові", "🎙 Одноразовые голосовые", "🎙 One-time voice"),
+    "feat_viewonce_video": ("🎥 Одноразові відео", "🎥 Одноразовые видео", "🎥 One-time videos"),
+    "feat_send": (".send — розсилка", ".send — рассылка", ".send — bulk post"),
     "lang_title": (
         "🌐 Оберіть мову інтерфейсу.\n\n<i>Telegram не завжди коректно передає мову боту — оберіть вручну.</i>",
         "🌐 Выберите язык интерфейса.\n\n<i>Telegram не всегда корректно передаёт язык боту — выберите вручную.</i>",

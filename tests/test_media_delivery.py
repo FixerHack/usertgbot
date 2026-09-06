@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import contextlib
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
 import pytest
 
@@ -208,3 +209,147 @@ async def test_a_one_time_video_we_could_not_download_still_warns(db_session, ow
     await viewonce._forward(_Client(), _Event(), _ctx(owner.id, notifier), "video")
 
     assert [m["as"] for m in notifier.sent] == ["text"]
+
+
+# --- the switches ----------------------------------------------------------
+
+
+class _RecordingClient:
+    """Telethon registers handlers through a decorator; this keeps them so a
+    test can call one directly instead of standing up a real client."""
+
+    def __init__(self):
+        self.handlers: dict[str, object] = {}
+
+    def on(self, _event):
+        def decorator(func):
+            self.handlers[func.__name__] = func
+            return func
+
+        return decorator
+
+
+def _view_once_event(*, video: bool = False):
+    # SimpleNamespace rather than nested classes: a class body cannot see the
+    # enclosing function's locals, so `video` would be a NameError there.
+    message = SimpleNamespace(
+        media=SimpleNamespace(ttl_seconds=60),
+        photo=None,
+        voice=None,
+        video_note=object() if video else None,
+        video=None,
+    )
+    return SimpleNamespace(message=message, sender_id=42)
+
+
+async def _set_features(db_session, user_id: int, **flags):
+    from db import queries
+    from shared.settings_schema import Features
+
+    features = Features()
+    for name, value in flags.items():
+        setattr(features, name, value)
+    await queries.set_features(db_session, user_id, features.to_dict())
+    await db_session.commit()
+
+
+async def test_one_time_videos_can_be_switched_off(db_session, owner, monkeypatch):
+    """They used to run unconditionally: photos and voice had a switch, video
+    did not, so there was no way to stop them.
+
+    The client here CAN download — otherwise removing the switch would still
+    send nothing (the fake would just fail further along) and this test would
+    pass for the wrong reason.
+    """
+    from userbot.handlers import viewonce
+
+    _patch_lookups(monkeypatch, viewonce, db_session)
+    await _set_features(db_session, owner.id, viewonce_video=False)
+
+    notifier = _Notifier()
+    client = _RecordingClient()
+
+    async def _download(message, file=None):
+        return b"mp4"
+
+    client.download_media = _download
+    viewonce.register(client, _ctx(owner.id, notifier))
+
+    await client.handlers["capture"](_view_once_event(video=True))
+    assert notifier.sent == []
+
+
+async def test_one_time_videos_are_captured_while_the_switch_is_on(db_session, owner, monkeypatch):
+    from userbot.handlers import viewonce
+
+    _patch_lookups(monkeypatch, viewonce, db_session)
+    await _set_features(db_session, owner.id, viewonce_video=True)
+
+    notifier = _Notifier()
+    client = _RecordingClient()
+    ctx = _ctx(owner.id, notifier)
+
+    async def _download(message, file=None):
+        return b"mp4"
+
+    client.download_media = _download
+    viewonce.register(client, ctx)
+
+    await client.handlers["capture"](_view_once_event(video=True))
+    assert [m["as"] for m in notifier.sent] == ["video"]
+
+
+def _send_event(count: str = "999"):
+    """A .send whose count is out of range: the first thing the command does
+    past the gate is post a "too many" notice, which makes "did it get past
+    the gate" observable without actually sending anything."""
+    match = SimpleNamespace(group=lambda n: count if n == 1 else "text")
+    return SimpleNamespace(pattern_match=match, chat_id=-100, reply=_noop_reply)
+
+
+async def _noop_reply(text, **kw):
+    return None
+
+
+async def _run_send(db_session, owner, monkeypatch, *, enabled: bool) -> list[str]:
+    from userbot.handlers import commands
+
+    @contextlib.asynccontextmanager
+    async def fake_session():
+        yield db_session
+
+    monkeypatch.setattr(commands, "get_session", fake_session)
+    monkeypatch.setattr(commands.asyncio, "sleep", _noop_sleep)
+    await _set_features(db_session, owner.id, send=enabled)
+
+    posted: list[str] = []
+
+    client = _RecordingClient()
+
+    async def _send_message(chat_id, text):
+        posted.append(text)
+        return SimpleNamespace(delete=_noop_delete)
+
+    client.send_message = _send_message
+    commands.register(client, _ctx(owner.id, _Notifier()))
+    await client.handlers["handle_send"](_send_event())
+    return posted
+
+
+async def _noop_sleep(_seconds):
+    return None
+
+
+async def _noop_delete():
+    return None
+
+
+async def test_send_can_be_switched_off(db_session, owner, monkeypatch):
+    """The tariff decides whether .send exists at all; this decides whether
+    the owner wants it. Before, only the first check existed."""
+    assert await _run_send(db_session, owner, monkeypatch, enabled=False) == []
+
+
+async def test_send_still_runs_while_the_switch_is_on(db_session, owner, monkeypatch):
+    """Without this the test above would pass even with the switch removed."""
+    assert await _run_send(db_session, owner, monkeypatch, enabled=True) != []

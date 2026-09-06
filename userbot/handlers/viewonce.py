@@ -43,6 +43,8 @@ def register(client: TelegramClient, ctx: WorkerContext) -> None:
                 return
             if kind == "voice" and not features.viewonce_voice:
                 return
+            if kind == "video" and not features.viewonce_video:
+                return
         try:
             await _forward(client, event, ctx, kind)
         except Exception:

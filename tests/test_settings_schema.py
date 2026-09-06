@@ -89,3 +89,24 @@ def test_buttons_and_the_card_link_share_one_rule():
     assert not is_valid_url("javascript:alert(1)")
     assert len(parse_buttons("Label | https://ok.test")) == 1
     assert is_valid_url("https://ok.test")
+
+
+def test_a_settings_row_written_before_a_switch_existed_keeps_the_feature_on():
+    """Features live in a JSON blob, so an old row simply lacks the new keys.
+    Reading a missing key as False would silently switch off something the
+    owner never touched."""
+    from shared.settings_schema import Features
+
+    old_row = {"deleted": False, "edited": True, "info": True, "me": True, "ban": True, "check": True}
+    features = Features.from_dict(old_row)
+
+    assert features.deleted is False, "what was stored is respected"
+    assert features.viewonce_video is True
+    assert features.send is True
+
+
+def test_every_switch_survives_a_round_trip():
+    from shared.settings_schema import Features
+
+    off = Features(**{name: False for name in Features._FIELDS})
+    assert Features.from_dict(off.to_dict()).to_dict() == off.to_dict()

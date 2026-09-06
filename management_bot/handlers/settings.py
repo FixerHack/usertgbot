@@ -25,7 +25,7 @@ from shared.settings_schema import (
     parse_buttons,
     parse_hhmm,
 )
-from shared.tariffs import Tariff, get_plan
+from shared.tariffs import Tariff, get_plan, tariff_grants_command
 
 logger = logging.getLogger(__name__)
 router = Router(name="settings")
@@ -178,20 +178,29 @@ _FEATURE_ROWS = [
     [("info", "feat_info"), ("me", "feat_me")],
     [("ban", "feat_ban"), ("check", "feat_check")],
     [("viewonce_photo", "feat_viewonce_photo"), ("viewonce_voice", "feat_viewonce_voice")],
+    [("viewonce_video", "feat_viewonce_video"), ("send", "feat_send")],
 ]
 
+# Switches whose feature the tariff may not include at all. A switch for
+# something the plan does not grant is a lie either way round: off looks like
+# the reason it does not work, on promises something that will not happen.
+_TARIFF_GATED = {"send": "send"}
 
-def _features_menu(features: Features, lang: str) -> InlineKeyboardMarkup:
-    rows = [
-        [
+
+def _features_menu(features: Features, lang: str, *, tariff: str | None = None) -> InlineKeyboardMarkup:
+    rows = []
+    for row in _FEATURE_ROWS:
+        buttons = [
             InlineKeyboardButton(
                 text=_feat_label(lang, label_key, getattr(features, field)),
                 callback_data=f"set:features:toggle:{field}",
             )
             for field, label_key in row
+            if field not in _TARIFF_GATED
+            or (tariff is not None and tariff_grants_command(tariff, _TARIFF_GATED[field]))
         ]
-        for row in _FEATURE_ROWS
-    ]
+        if buttons:
+            rows.append(buttons)
     rows.append([InlineKeyboardButton(text=t(lang, "btn_back"), callback_data="set:back")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -320,12 +329,20 @@ async def _load_features(session, telegram_id: int) -> tuple[int | None, Feature
     return user.id, Features.from_dict(row.features)
 
 
+async def _current_tariff(db, telegram_id: int) -> str | None:
+    sub = await queries.get_active_subscription_by_telegram_id(db, telegram_id)
+    return sub.tariff if sub is not None else None
+
+
 @router.callback_query(F.data == "set:features")
 async def on_features(callback: CallbackQuery) -> None:
     lang = lang_of(callback)
     async with get_session() as db:
         _, features = await _load_features(db, callback.message.chat.id)
-    await callback.message.edit_text(t(lang, "features_title"), reply_markup=_features_menu(features, lang))
+        tariff = await _current_tariff(db, callback.message.chat.id)
+    await callback.message.edit_text(
+        t(lang, "features_title"), reply_markup=_features_menu(features, lang, tariff=tariff)
+    )
     await callback.answer()
 
 
@@ -341,7 +358,10 @@ async def on_features_toggle(callback: CallbackQuery) -> None:
         setattr(features, key, not getattr(features, key))
         await queries.set_features(db, uid, features.to_dict())
         await db.commit()
-    await callback.message.edit_text(t(lang, "features_title"), reply_markup=_features_menu(features, lang))
+        tariff = await _current_tariff(db, callback.message.chat.id)
+    await callback.message.edit_text(
+        t(lang, "features_title"), reply_markup=_features_menu(features, lang, tariff=tariff)
+    )
     await callback.answer()
 
 
