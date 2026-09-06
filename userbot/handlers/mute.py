@@ -102,7 +102,7 @@ def _humanize(minutes: int, lang: str) -> str:
 def register(client: TelegramClient, ctx: WorkerContext) -> None:
     @client.on(events.NewMessage(outgoing=True, pattern=MUTE_RE))
     async def handle_mute(event: events.NewMessage.Event) -> None:
-        from userbot.handlers.commands import _feature_enabled, _gate, clear_command
+        from userbot.handlers.commands import _feature_enabled, _gate, _notice, clear_command
 
         if not await _feature_enabled(ctx, "mute"):
             await clear_command(event)
@@ -112,8 +112,11 @@ def register(client: TelegramClient, ctx: WorkerContext) -> None:
 
         target = await _target_of(event)
         if target is None:
-            await event.respond(t(ctx.owner_lang, "ub_mute_no_target"))
             await clear_command(event)
+            # Self-deleting, like .send's limit notices: it is a correction
+            # for the owner, not something the other side needs left in the
+            # chat for good.
+            await _notice(client, event.chat_id, t(ctx.owner_lang, "ub_mute_no_target"))
             return
 
         raw = event.pattern_match.group(1)
@@ -139,7 +142,7 @@ def register(client: TelegramClient, ctx: WorkerContext) -> None:
 
     @client.on(events.NewMessage(outgoing=True, pattern=UNMUTE_RE))
     async def handle_unmute(event: events.NewMessage.Event) -> None:
-        from userbot.handlers.commands import _feature_enabled, _gate, clear_command
+        from userbot.handlers.commands import _feature_enabled, _gate, _notice, clear_command
 
         if not await _feature_enabled(ctx, "mute"):
             await clear_command(event)
@@ -149,8 +152,8 @@ def register(client: TelegramClient, ctx: WorkerContext) -> None:
 
         target = await _target_of(event)
         if target is None:
-            await event.respond(t(ctx.owner_lang, "ub_mute_no_target"))
             await clear_command(event)
+            await _notice(client, event.chat_id, t(ctx.owner_lang, "ub_mute_no_target"))
             return
 
         async with get_session() as db:
@@ -161,8 +164,8 @@ def register(client: TelegramClient, ctx: WorkerContext) -> None:
         ctx.muted.pop((event.chat_id, target), None)
 
         if not removed:
-            await event.respond(t(ctx.owner_lang, "ub_not_muted"))
             await clear_command(event)
+            await _notice(client, event.chat_id, t(ctx.owner_lang, "ub_not_muted"))
             return
         who = await entities.ref(client, target, ctx.owner_lang)
         await event.respond(t(ctx.owner_lang, "ub_unmuted", user=who))

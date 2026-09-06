@@ -39,6 +39,8 @@ class _Notifier:
 class _Client:
     def __init__(self):
         self.handlers: dict[str, object] = {}
+        self.notices: list[str] = []
+        self.notice_deleted: list[int] = []
 
     def on(self, _event):
         def decorator(func):
@@ -46,6 +48,16 @@ class _Client:
             return func
 
         return decorator
+
+    async def send_message(self, chat_id, text):
+        self.notices.append(text)
+        parent = self
+
+        class _Sent:
+            async def delete(self_inner):
+                parent.notice_deleted.append(1)
+
+        return _Sent()
 
 
 @pytest.fixture
@@ -115,17 +127,23 @@ def _command_event(*, minutes: str | None = None, chat_id: int = -100, private: 
     return event
 
 
+async def _noop_sleep(_seconds):
+    return None
+
+
 async def _run_command(db_session, owner, monkeypatch, name: str, event, notifier=None):
     from userbot.handlers import commands
 
     _patch(monkeypatch, mute, db_session)
     _patch(monkeypatch, commands, db_session)
     monkeypatch.setattr(mute.entities, "ref", _ref, raising=False)
+    monkeypatch.setattr(commands.asyncio, "sleep", _noop_sleep)
 
     ctx = _ctx(owner.id, notifier)
     client = _Client()
     mute.register(client, ctx)
     await client.handlers[name](event)
+    _run_command.last_client = client
     return ctx
 
 
@@ -156,7 +174,7 @@ async def test_a_group_mute_needs_a_reply_to_know_who(db_session, owner, monkeyp
     ctx = await _run_command(db_session, owner, monkeypatch, "handle_mute", event)
 
     assert ctx.muted == {}
-    assert event.responses, "the owner has to be told why nothing happened"
+    assert _run_command.last_client.notices, "the owner has to be told why nothing happened"
 
 
 async def test_a_group_mute_targets_the_person_replied_to(db_session, owner, monkeypatch):
@@ -300,3 +318,15 @@ async def test_a_switched_off_mute_still_clears_its_command(db_session, owner, m
     assert ctx.muted == {}, "switched off means it does not run"
     assert event.responses == [], "and says nothing"
     assert event.deleted == [1], "but still takes the command off the screen"
+
+
+async def test_a_correction_takes_itself_off_the_screen(db_session, owner, monkeypatch):
+    """It is a note to the owner, not something the other side needs left in
+    the chat — the same treatment .send's limit notices get."""
+    event = _command_event(chat_id=-100, private=False)
+    await _run_command(db_session, owner, monkeypatch, "handle_mute", event)
+
+    client = _run_command.last_client
+    assert client.notices, "it is said"
+    assert client.notice_deleted == [1], "and then cleared"
+    assert event.deleted == [1], "as is the command that prompted it"
