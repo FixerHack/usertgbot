@@ -152,13 +152,14 @@ class Features:
     viewonce_voice: bool = True     # capture one-time voice messages
     viewonce_video: bool = True     # capture one-time videos and video notes
     send: bool = True               # .send — bulk-post N copies (Pro/Premium)
+    mute: bool = True               # .mute / .unmute (Pro/Premium)
 
     # New fields default to True and `from_dict` fills anything absent, so a
     # settings row written before a switch existed keeps today's behaviour
     # rather than silently turning the feature off.
     _FIELDS = (
         "deleted", "edited", "info", "me", "ban", "check",
-        "viewonce_photo", "viewonce_voice", "viewonce_video", "send",
+        "viewonce_photo", "viewonce_voice", "viewonce_video", "send", "mute",
     )
 
     def to_dict(self) -> dict:

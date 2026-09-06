@@ -14,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import (
+    MutedUser,
     CheckUsage,
     IgnoredChat,
     MediaBlob,
@@ -254,6 +255,68 @@ async def get_or_create_settings(session: AsyncSession, user_id: int) -> UserSet
     return row
 
 
+# The hourly cap's window, and a hard ceiling on how many entries the column
+# may hold — the cap itself is at most a handful, so anything beyond this is a
+# bug rather than a user.
+_SEND_WINDOW_SECONDS = 3600
+_SEND_HISTORY_MAX = 50
+
+
+@dataclass(frozen=True)
+class SendAllowance:
+    """Whether .send may run, and if not, which limit stopped it.
+
+    Two limits, reported separately: telling someone to "wait 4 minutes" when
+    they have actually used up the hour sends them back to try again and fail
+    again.
+    """
+
+    allowed: bool
+    reason: str = ""            # "" | "cooldown" | "hourly"
+    remaining_seconds: int = 0
+
+
+def _recent_sends(row, window_seconds: int, now: datetime) -> list[datetime]:
+    """Timestamps still inside the window, oldest first. Anything unparseable
+    is dropped rather than raised on: a corrupt entry must not lock someone
+    out of a feature they paid for."""
+    out = []
+    for raw in row.send_history or []:
+        try:
+            moment = as_aware(datetime.fromisoformat(str(raw)))
+        except ValueError:
+            continue
+        if (now - moment).total_seconds() < window_seconds:
+            out.append(moment)
+    return sorted(out)
+
+
+async def peek_send_allowance(
+    session: AsyncSession,
+    user_id: int,
+    *,
+    cooldown_seconds: int,
+    max_per_hour: int = 0,
+    now: datetime | None = None,
+) -> SendAllowance:
+    now = now or _utcnow()
+    row = await get_or_create_settings(session, user_id)
+
+    if row.last_send_at is not None:
+        remaining = cooldown_seconds - (now - as_aware(row.last_send_at)).total_seconds()
+        if remaining > 0:
+            return SendAllowance(False, "cooldown", max(0, ceil(remaining)))
+
+    if max_per_hour > 0:
+        recent = _recent_sends(row, _SEND_WINDOW_SECONDS, now)
+        if len(recent) >= max_per_hour:
+            # Free again when the OLDEST of them ages out of the window.
+            wait = _SEND_WINDOW_SECONDS - (now - recent[0]).total_seconds()
+            return SendAllowance(False, "hourly", max(0, ceil(wait)))
+
+    return SendAllowance(True)
+
+
 async def peek_send_cooldown(
     session: AsyncSession, user_id: int, cooldown_seconds: int, *, now: datetime | None = None
 ) -> tuple[bool, int]:
@@ -271,9 +334,66 @@ async def peek_send_cooldown(
 
 
 async def mark_send_used(session: AsyncSession, user_id: int, *, now: datetime | None = None) -> None:
+    now = now or _utcnow()
     row = await get_or_create_settings(session, user_id)
-    row.last_send_at = (now or _utcnow()).astimezone(timezone.utc).replace(tzinfo=None)
+    row.last_send_at = now.astimezone(timezone.utc).replace(tzinfo=None)
+    # Pruned on write so the column cannot grow without bound; the window is
+    # the only thing anyone ever asks about.
+    history = [m.isoformat() for m in _recent_sends(row, _SEND_WINDOW_SECONDS, now)]
+    history.append(now.astimezone(timezone.utc).isoformat())
+    row.send_history = history[-_SEND_HISTORY_MAX:]
     await session.flush()
+
+
+# --- mutes -----------------------------------------------------------------
+
+
+async def get_mutes(session: AsyncSession, owner_user_id: int) -> list[MutedUser]:
+    result = await session.execute(select(MutedUser).where(MutedUser.owner_user_id == owner_user_id))
+    return list(result.scalars())
+
+
+async def set_mute(
+    session: AsyncSession,
+    *,
+    owner_user_id: int,
+    chat_id: int,
+    target_user_id: int,
+    until: datetime | None,
+) -> MutedUser:
+    """Mute, or re-mute with a new deadline. `until` None means until
+    `.unmute` — re-running `.mute` on someone already muted replaces the
+    deadline rather than stacking a second row."""
+    result = await session.execute(
+        select(MutedUser).where(
+            MutedUser.owner_user_id == owner_user_id,
+            MutedUser.chat_id == chat_id,
+            MutedUser.target_user_id == target_user_id,
+        )
+    )
+    row = result.scalar_one_or_none()
+    if row is None:
+        row = MutedUser(owner_user_id=owner_user_id, chat_id=chat_id, target_user_id=target_user_id)
+        session.add(row)
+    row.until = until.astimezone(timezone.utc).replace(tzinfo=None) if until is not None else None
+    await session.flush()
+    return row
+
+
+async def clear_mute(session: AsyncSession, *, owner_user_id: int, chat_id: int, target_user_id: int) -> bool:
+    result = await session.execute(
+        select(MutedUser).where(
+            MutedUser.owner_user_id == owner_user_id,
+            MutedUser.chat_id == chat_id,
+            MutedUser.target_user_id == target_user_id,
+        )
+    )
+    row = result.scalar_one_or_none()
+    if row is None:
+        return False
+    await session.delete(row)
+    await session.flush()
+    return True
 
 
 async def set_me_card(session: AsyncSession, user_id: int, card: dict | None) -> UserSettings:

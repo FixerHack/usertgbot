@@ -14,7 +14,7 @@ from shared.i18n import resolve_lang, t
 from shared.notify import ManagerNotifier
 from userbot.config import settings
 from userbot.context import WorkerContext
-from userbot.handlers import autoresponder, autosave, commands, viewonce
+from userbot.handlers import autoresponder, autosave, commands, mute, viewonce
 from userbot.message_cache import RecentMessageCache
 
 logger = logging.getLogger(__name__)
@@ -116,6 +116,11 @@ async def run_worker(
     )
 
     commands.register(client, ctx)
+    # Before autosave: a muted person's message is deleted by us, and
+    # anti-delete must not then hand it back to the owner as a "deleted
+    # message" — which would defeat the entire point of muting them.
+    mute.register(client, ctx)
+    await mute.load_mutes(ctx)
     autosave.register(client, ctx)
     autoresponder.register(client, ctx)
     viewonce.register(client, ctx)

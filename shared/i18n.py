@@ -778,6 +778,13 @@ _TR: dict[str, tuple[str, str, str]] = {
     "feat_viewonce_voice": ("🎙 Одноразові голосові", "🎙 Одноразовые голосовые", "🎙 One-time voice"),
     "feat_viewonce_video": ("🎥 Одноразові відео", "🎥 Одноразовые видео", "🎥 One-time videos"),
     "feat_send": (".send — розсилка", ".send — рассылка", ".send — bulk post"),
+    "feat_mute": ("🔇 .mute — тиша", "🔇 .mute — тишина", "🔇 .mute — silence"),
+    "btn_delete_notice": ("🗑 Видалити", "🗑 Удалить", "🗑 Delete"),
+    "notice_delete_failed": (
+        "Telegram не дає видалити повідомлення, старше за 48 годин.",
+        "Telegram не даёт удалить сообщение старше 48 часов.",
+        "Telegram will not delete a message older than 48 hours.",
+    ),
     "lang_title": (
         "🌐 Оберіть мову інтерфейсу.\n\n<i>Telegram не завжди коректно передає мову боту — оберіть вручну.</i>",
         "🌐 Выберите язык интерфейса.\n\n<i>Telegram не всегда корректно передаёт язык боту — выберите вручную.</i>",
@@ -913,6 +920,35 @@ _TR: dict[str, tuple[str, str, str]] = {
         "❌ Количество должно быть от 1 до {max}: .send 10 текст",
         "❌ Count must be between 1 and {max}: .send 10 text",
     ),
+    "ub_send_hourly": (
+        "⏳ Ліміт: {limit} розсилок на годину. Наступна — через {minutes} хв.",
+        "⏳ Лимит: {limit} рассылок в час. Следующая — через {minutes} мин.",
+        "⏳ Limit: {limit} broadcasts per hour. Next one in {minutes} min.",
+    ),
+    # --- .mute / .unmute ---
+    "ub_muted_for": (
+        "🔇 {user} — тиша на {duration}. Повідомлення видалятимуться.",
+        "🔇 {user} — тишина на {duration}. Сообщения будут удаляться.",
+        "🔇 {user} muted for {duration}. Messages will be deleted.",
+    ),
+    "ub_muted_forever": (
+        "🔇 {user} — тиша до .unmute. Повідомлення видалятимуться.",
+        "🔇 {user} — тишина до .unmute. Сообщения будут удаляться.",
+        "🔇 {user} muted until .unmute. Messages will be deleted.",
+    ),
+    "ub_unmuted": ("🔊 {user} — знову чути.", "🔊 {user} — снова слышно.", "🔊 {user} unmuted."),
+    "ub_not_muted": (
+        "Цей користувач не в тиші.",
+        "Этот пользователь не в тишине.",
+        "That user is not muted.",
+    ),
+    "ub_mute_no_target": (
+        "Дайте відповідь на повідомлення того, кого треба заглушити.",
+        "Ответьте на сообщение того, кого нужно заглушить.",
+        "Reply to a message from the person you want to mute.",
+    ),
+    "dur_hours": ("{n} год", "{n} ч", "{n}h"),
+    "dur_minutes": ("{n} хв", "{n} мин", "{n}m"),
     "ub_send_cooldown": (
         "⏳ Зачекайте ще {minutes} хв перед наступним .send.",
         "⏳ Подождите ещё {minutes} мин перед следующим .send.",

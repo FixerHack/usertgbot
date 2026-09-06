@@ -215,6 +215,10 @@ class UserSettings(Base):
     # bought per user, so cooling down per-session would let someone with two
     # connected phone numbers just alternate between them to dodge it.
     last_send_at: Mapped[datetime | None] = mapped_column(default=None)
+    # ISO timestamps of recent .send runs, pruned to the rate-limit window.
+    # The cooldown only needs the last one; an hourly cap needs to count them,
+    # and a list of at most a handful of strings is cheaper than a table.
+    send_history: Mapped[Any | None] = mapped_column(JSON, default=None)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
@@ -307,6 +311,29 @@ class ConnectToken(Base):
     # the bot restarted mid-attempt, and the user would just be left waiting.
     expiry_notified_at: Mapped[datetime | None] = mapped_column(default=None)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class MutedUser(Base):
+    """Someone the owner has silenced in one chat.
+
+    Scoped to a chat rather than globally: muting a person in a group has
+    nothing to do with wanting them gone from a private conversation, and the
+    reverse surprises people. `until` NULL means until `.unmute` — the rows
+    are the record, and an expired one is simply ignored rather than swept.
+    """
+
+    __tablename__ = "muted_users"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    owner_user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    chat_id: Mapped[int] = mapped_column(BigInteger)
+    target_user_id: Mapped[int] = mapped_column(BigInteger)
+    until: Mapped[datetime | None] = mapped_column(default=None)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("owner_user_id", "chat_id", "target_user_id", name="uq_mute_target"),
+    )
 
 
 class IgnoredChat(Base):

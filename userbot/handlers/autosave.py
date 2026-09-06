@@ -30,6 +30,7 @@ from shared.i18n import t
 from shared.settings_schema import Features
 from userbot import entities, formatting
 from userbot.context import WorkerContext
+from userbot.handlers.mute import is_muted
 from userbot.notify import notify_owner
 from userbot.storage import load_features
 
@@ -60,7 +61,10 @@ def _ignore_chat_kb(chat_id: int, chat_title: str | None, lang: str) -> InlineKe
             [
                 InlineKeyboardButton(
                     text=t(lang, "btn_ignore_chat"), callback_data=f"ignore_chat:{chat_id}:{safe_title}"
-                )
+                ),
+                # Recovered messages pile up fast. Without this the only way
+                # to clear one is Telegram's own delete menu, two taps away.
+                InlineKeyboardButton(text=t(lang, "btn_delete_notice"), callback_data="notice:del"),
             ]
         ]
     )
@@ -130,6 +134,12 @@ def _capture_location(event) -> tuple[float, float] | None:
 def register(client: TelegramClient, ctx: WorkerContext) -> None:
     @client.on(events.NewMessage(incoming=True))
     async def remember(event: events.NewMessage.Event) -> None:
+        # Muting someone means not wanting to see what they write. Their
+        # messages get deleted (by us), and anything remembered here would
+        # come straight back as a "deleted message" notice — the opposite of
+        # what was asked for. Never cached, so there is nothing to restore.
+        if event.sender_id and is_muted(ctx, event.chat_id, event.sender_id):
+            return
         media, media_kind, media_filename = await _capture_media(client, ctx, event)
         await ctx.cache.remember(
             chat_id=event.chat_id,

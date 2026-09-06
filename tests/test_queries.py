@@ -191,3 +191,113 @@ async def test_send_cooldown_is_per_user(db_session):
 
     assert (await queries.peek_send_cooldown(db_session, a.id, 600, now=now + timedelta(seconds=10)))[0] is False
     assert (await queries.peek_send_cooldown(db_session, b.id, 600, now=now + timedelta(seconds=10)))[0] is True
+
+
+# --- .send: cooldown and the hourly cap ------------------------------------
+
+
+async def test_the_hourly_cap_stops_a_run_the_cooldown_would_allow(db_session):
+    """Shortening the cooldown must not quietly become "unlimited, in smaller
+    pieces" — that is the whole reason the second limit exists."""
+    from datetime import datetime, timedelta, timezone
+
+    from db import queries
+    from management_bot import storage
+
+    user = await storage.upsert_user(db_session, 6001)
+    start = datetime(2026, 9, 7, 12, 0, tzinfo=timezone.utc)
+
+    # Five runs, each well past the 5-minute cooldown.
+    for i in range(5):
+        moment = start + timedelta(minutes=6 * i)
+        allowance = await queries.peek_send_allowance(
+            db_session, user.id, cooldown_seconds=300, max_per_hour=5, now=moment
+        )
+        assert allowance.allowed, f"run {i} should be inside both limits"
+        await queries.mark_send_used(db_session, user.id, now=moment)
+
+    # A sixth, again past the cooldown, but the hour is spent.
+    sixth = start + timedelta(minutes=30)
+    allowance = await queries.peek_send_allowance(
+        db_session, user.id, cooldown_seconds=300, max_per_hour=5, now=sixth
+    )
+    assert not allowance.allowed
+    assert allowance.reason == "hourly"
+    assert allowance.remaining_seconds > 0
+
+
+async def test_the_hour_frees_up_as_the_oldest_run_ages_out(db_session):
+    from datetime import datetime, timedelta, timezone
+
+    from db import queries
+    from management_bot import storage
+
+    user = await storage.upsert_user(db_session, 6002)
+    start = datetime(2026, 9, 7, 12, 0, tzinfo=timezone.utc)
+    for i in range(5):
+        await queries.mark_send_used(db_session, user.id, now=start + timedelta(minutes=6 * i))
+
+    just_before = await queries.peek_send_allowance(
+        db_session, user.id, cooldown_seconds=300, max_per_hour=5,
+        now=start + timedelta(minutes=59),
+    )
+    assert not just_before.allowed
+
+    just_after = await queries.peek_send_allowance(
+        db_session, user.id, cooldown_seconds=300, max_per_hour=5,
+        now=start + timedelta(minutes=61),
+    )
+    assert just_after.allowed, "the first run has left the window"
+
+
+async def test_the_cooldown_still_reports_itself_separately(db_session):
+    """Telling someone to wait four minutes when the hour is spent sends them
+    back to fail again."""
+    from datetime import datetime, timedelta, timezone
+
+    from db import queries
+    from management_bot import storage
+
+    user = await storage.upsert_user(db_session, 6003)
+    start = datetime(2026, 9, 7, 12, 0, tzinfo=timezone.utc)
+    await queries.mark_send_used(db_session, user.id, now=start)
+
+    allowance = await queries.peek_send_allowance(
+        db_session, user.id, cooldown_seconds=300, max_per_hour=5,
+        now=start + timedelta(minutes=1),
+    )
+    assert not allowance.allowed and allowance.reason == "cooldown"
+
+
+async def test_send_history_does_not_grow_without_bound(db_session):
+    from datetime import datetime, timedelta, timezone
+
+    from db import queries
+    from management_bot import storage
+
+    user = await storage.upsert_user(db_session, 6004)
+    start = datetime(2026, 9, 7, 12, 0, tzinfo=timezone.utc)
+    for i in range(80):
+        await queries.mark_send_used(db_session, user.id, now=start + timedelta(minutes=i))
+
+    row = await queries.get_or_create_settings(db_session, user.id)
+    assert len(row.send_history) <= 50
+
+
+async def test_a_corrupt_history_entry_does_not_lock_anyone_out(db_session):
+    """A bad row must not cost someone a feature they paid for."""
+    from datetime import datetime, timezone
+
+    from db import queries
+    from management_bot import storage
+
+    user = await storage.upsert_user(db_session, 6005)
+    row = await queries.get_or_create_settings(db_session, user.id)
+    row.send_history = ["not-a-date", "also bad"]
+    await db_session.flush()
+
+    allowance = await queries.peek_send_allowance(
+        db_session, user.id, cooldown_seconds=300, max_per_hour=5,
+        now=datetime(2026, 9, 7, 12, 0, tzinfo=timezone.utc),
+    )
+    assert allowance.allowed

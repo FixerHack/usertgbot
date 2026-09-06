@@ -17,7 +17,7 @@ from telethon import TelegramClient, errors, events
 from telethon.tl.functions.contacts import BlockRequest
 from telethon.tl.functions.users import GetFullUserRequest
 
-from db.queries import consume_check, mark_send_used, peek_send_cooldown
+from db.queries import consume_check, mark_send_used, peek_send_allowance
 from db.session import get_session
 from shared.i18n import t
 from shared.settings_schema import Features, MeCard
@@ -250,15 +250,27 @@ async def _do_send(client: TelegramClient, event: events.NewMessage.Event, ctx: 
     # BEFORE the send loop so two near-simultaneous .send calls can't both
     # slip through the gate while the first batch is still sending.
     async with get_session() as db:
-        allowed, remaining_seconds = await peek_send_cooldown(db, ctx.owner_user_id, plan.send_cooldown_seconds)
-        if not allowed:
-            minutes = max(1, ceil(remaining_seconds / 60))
-            await db.rollback()
-        else:
+        allowance = await peek_send_allowance(
+            db,
+            ctx.owner_user_id,
+            cooldown_seconds=plan.send_cooldown_seconds,
+            max_per_hour=plan.send_max_per_hour,
+        )
+        if allowance.allowed:
             await mark_send_used(db, ctx.owner_user_id)
             await db.commit()
-    if not allowed:
-        await _notice(client, chat_id, t(ctx.owner_lang, "ub_send_cooldown", minutes=minutes))
+        else:
+            await db.rollback()
+    if not allowance.allowed:
+        minutes = max(1, ceil(allowance.remaining_seconds / 60))
+        # Which limit stopped it matters: "wait 4 minutes" on an exhausted
+        # hour just sends someone back to fail again.
+        text = (
+            t(ctx.owner_lang, "ub_send_hourly", limit=plan.send_max_per_hour, minutes=minutes)
+            if allowance.reason == "hourly"
+            else t(ctx.owner_lang, "ub_send_cooldown", minutes=minutes)
+        )
+        await _notice(client, chat_id, text)
         return
 
     await event.delete()
