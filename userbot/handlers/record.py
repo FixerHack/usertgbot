@@ -1,9 +1,15 @@
 """`.save` / `.unsave` — transcribe a chat to a text file (Premium).
 
-`.save` starts recording the chat it is typed in; `.unsave` stops and delivers
-the archive. What is stored is a transcript, not a backup: text, and a label
-for anything that is not text. Keeping the media would turn a chat archive into
-an unbounded pile of blobs, for a feature whose whole output is a .txt.
+`.save` starts recording the chat it is typed in — private or group — and
+`.unsave` stops and delivers the archive. What is stored is a transcript, not
+a backup: text, and a label for anything that is not text. Keeping the media
+would turn a chat archive into an unbounded pile of blobs, for a feature whose
+whole output is a .txt.
+
+Every word this feature says goes to the owner's chat with the manager bot and
+clears itself shortly after. Announcing "recording started" in the chat being
+recorded would tell the other person exactly what they are not meant to know —
+which makes the obvious place to put that message the one place it cannot go.
 
 Like the mute list, which chats are recording is cached on the worker context
 — the listener runs on every message in every chat, and a query per message to
@@ -32,7 +38,7 @@ from db.session import get_session
 from shared.i18n import t
 from userbot import entities, formatting
 from userbot.context import WorkerContext
-from userbot.notify import notify_owner
+from userbot.notify import notify_owner, notify_owner_briefly
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +99,19 @@ async def load_recordings(ctx: WorkerContext) -> None:
         logger.info("resumed %s chat recording(s) for owner_user_id=%s", len(ctx.recording), ctx.owner_user_id)
 
 
+async def _tell_owner(client, ctx: WorkerContext, chat_id: int, text: str) -> None:
+    """Say it in the owner's chat with the bot, and take it back down.
+
+    Falls back to a deliberately vague in-chat note when the manager bot
+    cannot reach them: they still learn something happened, and the person
+    being recorded still learns nothing.
+    """
+    from userbot.handlers.commands import _notice
+
+    if not await notify_owner_briefly(ctx, text):
+        await _notice(client, chat_id, t(ctx.owner_lang, "rec_see_bot"))
+
+
 def register(client: TelegramClient, ctx: WorkerContext) -> None:
     @client.on(events.NewMessage(outgoing=True, pattern=SAVE_RE))
     async def handle_save(event: events.NewMessage.Event) -> None:
@@ -106,7 +125,7 @@ def register(client: TelegramClient, ctx: WorkerContext) -> None:
         await clear_command(event)
 
         if event.chat_id in ctx.recording:
-            await _notice(client, event.chat_id, t(ctx.owner_lang, "rec_already"))
+            await _tell_owner(client, ctx, event.chat_id, t(ctx.owner_lang, "rec_already"))
             return
 
         title = await entities.plain_name(client, event.chat_id)
@@ -117,7 +136,7 @@ def register(client: TelegramClient, ctx: WorkerContext) -> None:
             await db.commit()
             ctx.recording[event.chat_id] = row.id
 
-        await _notice(client, event.chat_id, t(ctx.owner_lang, "rec_started"))
+        await _tell_owner(client, ctx, event.chat_id, t(ctx.owner_lang, "rec_started"))
 
     @client.on(events.NewMessage(outgoing=True, pattern=UNSAVE_RE))
     async def handle_unsave(event: events.NewMessage.Event) -> None:
@@ -132,7 +151,7 @@ def register(client: TelegramClient, ctx: WorkerContext) -> None:
 
         recording_id = ctx.recording.pop(event.chat_id, None)
         if recording_id is None:
-            await _notice(client, event.chat_id, t(ctx.owner_lang, "rec_not_running"))
+            await _tell_owner(client, ctx, event.chat_id, t(ctx.owner_lang, "rec_not_running"))
             return
 
         async with get_session() as db:
@@ -151,11 +170,10 @@ def register(client: TelegramClient, ctx: WorkerContext) -> None:
             document=archive.encode("utf-8"),
             document_filename=f"chat-{event.chat_id}.txt",
         )
-        await _notice(
-            client,
-            event.chat_id,
-            t(ctx.owner_lang, "rec_stopped" if delivered else "rec_undelivered", count=len(rows)),
-        )
+        if not delivered:
+            # The archive itself could not be delivered, so there is no point
+            # trying to say so through the same channel.
+            await _notice(client, event.chat_id, t(ctx.owner_lang, "rec_see_bot"))
 
     @client.on(events.NewMessage())
     async def collect(event: events.NewMessage.Event) -> None:

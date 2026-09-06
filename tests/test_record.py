@@ -16,12 +16,14 @@ import pytest
 from db.models import Subscription, SubscriptionStatus
 from management_bot import storage
 from userbot.context import WorkerContext
+from userbot import notify
 from userbot.handlers import record
 
 
 class _Notifier:
     def __init__(self):
         self.sent: list[dict] = []
+        self.deleted: list[int] = []
 
     def _record(self, entry):
         self.sent.append(entry)
@@ -32,6 +34,10 @@ class _Notifier:
 
     async def send_document(self, chat_id, document, *, filename="file", caption="", **kw):
         return self._record({"as": "document", "bytes": document, "filename": filename, "caption": caption})
+
+    async def delete_message(self, chat_id, message_id):
+        self.deleted.append(message_id)
+        return True
 
 
 class _Client:
@@ -94,6 +100,7 @@ def _setup(monkeypatch, db_session):
     monkeypatch.setattr(record, "get_session", fake_session)
     monkeypatch.setattr(commands, "get_session", fake_session)
     monkeypatch.setattr(commands.asyncio, "sleep", _noop)
+    monkeypatch.setattr(notify.asyncio, "sleep", _noop)
     monkeypatch.setattr(record.entities, "ref", _ref, raising=False)
     monkeypatch.setattr(record.entities, "plain_name", _plain, raising=False)
 
@@ -228,8 +235,10 @@ async def test_the_archive_goes_to_the_bot_not_into_the_chat(db_session, owner, 
 
     await _run(db_session, owner, monkeypatch, "handle_unsave", _command_event(), ctx=ctx, notifier=notifier)
 
-    assert [m["as"] for m in notifier.sent] == ["document"]
-    assert notifier.sent[0]["filename"].endswith(".txt")
+    documents = [m for m in notifier.sent if m["as"] == "document"]
+    assert len(documents) == 1
+    assert documents[0]["filename"].endswith(".txt")
+    assert _run.last_client.notices == [], "and nothing lands in the recorded chat"
     assert ctx.recording == {}
 
 
@@ -273,3 +282,39 @@ async def test_a_stopped_recording_is_not_resumed(db_session, owner, monkeypatch
     await record.load_recordings(fresh)
 
     assert fresh.recording == {}
+
+
+async def test_the_started_notice_never_lands_in_the_recorded_chat(db_session, owner, monkeypatch):
+    """Announcing "recording started" in the chat being recorded tells the
+    other person exactly the thing they are not meant to know."""
+    notifier = _Notifier()
+    await _run(db_session, owner, monkeypatch, "handle_save", _command_event(), notifier=notifier)
+
+    assert [m["as"] for m in notifier.sent] == ["text"], "it goes to the owner's chat with the bot"
+    assert _run.last_client.notices == [], "and nothing is posted where it could be seen"
+
+
+async def test_the_started_notice_clears_itself(db_session, owner, monkeypatch):
+    import asyncio
+
+    notifier = _Notifier()
+    await _run(db_session, owner, monkeypatch, "handle_save", _command_event(), notifier=notifier)
+
+    # The deletion runs as its own task. asyncio.sleep is patched out in these
+    # tests, so yielding through it would not hand control over — the pending
+    # tasks have to be awaited directly.
+    pending = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+    await asyncio.gather(*pending)
+
+    assert notifier.deleted, "the notice does not stay in the bot chat either"
+
+
+async def test_without_a_reachable_bot_the_note_says_nothing_revealing(db_session, owner, monkeypatch):
+    """No notifier at all: the owner still learns something happened, and the
+    person being recorded still learns nothing."""
+    from shared.i18n import t
+
+    ctx = await _run(db_session, owner, monkeypatch, "handle_save", _command_event(), notifier=None)
+
+    assert ctx.recording, "the recording still starts"
+    assert _run.last_client.notices == [t("uk", "rec_see_bot")]

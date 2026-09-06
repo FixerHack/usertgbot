@@ -154,5 +154,16 @@ class ManagerNotifier:
             _log_failure("location", chat_id, exc)
             return None
 
+    async def delete_message(self, chat_id: int, message_id: int) -> bool:
+        """Used for notices that are meant to be read and then gone. Telegram
+        refuses after 48 hours, which for a message posted seconds ago is not
+        a case worth reporting."""
+        try:
+            await self._bot.delete_message(chat_id, message_id)
+            return True
+        except TelegramAPIError as exc:
+            _log_failure("delete", chat_id, exc)
+            return False
+
     async def close(self) -> None:
         await self._bot.session.close()

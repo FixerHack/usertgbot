@@ -75,3 +75,24 @@ def test_switches_show_their_state():
     labels = _labels(_features_menu(Features(viewonce_video=False), "uk", tariff="pro"))
     video = next(l for l in labels if t("uk", "feat_viewonce_video") in l)
     assert video.startswith("❌")
+
+
+def test_the_settings_menu_gives_long_labels_their_own_row():
+    """Three short labels fit across the top; the longer names were being
+    truncated into "Автовідповід…" when they shared a row."""
+    from management_bot.handlers.settings import _main_menu
+
+    rows = [[b.text for b in row] for row in _main_menu(True, "uk").inline_keyboard]
+    assert len(rows[0]) == 3
+    assert all(len(row) == 1 for row in rows[1:]), "one per row below the first"
+
+
+def test_the_account_button_follows_whether_one_is_connected():
+    from management_bot.handlers.settings import _main_menu
+    from shared.i18n import t
+
+    connected = _main_menu(True, "uk").inline_keyboard[-1][0]
+    assert connected.text == t("uk", "set_btn_unlink")
+
+    empty = _main_menu(False, "uk").inline_keyboard[-1][0]
+    assert empty.text == t("uk", "set_btn_link")

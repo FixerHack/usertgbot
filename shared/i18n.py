@@ -968,6 +968,11 @@ _TR: dict[str, tuple[str, str, str]] = {
         "📁 Запись остановлена, {count} сообщений. Файл — в боте.",
         "📁 Recording stopped, {count} messages. The file is in the bot.",
     ),
+    "rec_see_bot": (
+        "Повідомлення — у чаті з ботом.",
+        "Сообщение — в чате с ботом.",
+        "The message is in your chat with the bot.",
+    ),
     "rec_undelivered": (
         "📁 Запис зупинено, {count} повідомлень. Файл не вдалося надіслати — "
         "відкрийте чат з менеджер-ботом і спробуйте ще раз.",

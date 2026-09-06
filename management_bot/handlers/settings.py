@@ -52,17 +52,17 @@ def _main_menu(has_account: bool, lang: str, *, auto_renew: bool = False) -> Inl
         if has_account
         else InlineKeyboardButton(text=t(lang, "set_btn_link"), callback_data="set:link")
     )
+    # Three short labels share the top row; everything below gets a row of its
+    # own so the longer names are not truncated into "Автовідповід…".
     rows = [
         [
             InlineKeyboardButton(text=t(lang, "set_btn_me"), callback_data="set:me"),
-            InlineKeyboardButton(text=t(lang, "set_btn_ar"), callback_data="set:ar"),
-            InlineKeyboardButton(text=t(lang, "set_btn_ignored"), callback_data="set:ignored"),
-        ],
-        [
             InlineKeyboardButton(text=t(lang, "set_btn_features"), callback_data="set:features"),
             InlineKeyboardButton(text=t(lang, "set_btn_lang"), callback_data="set:lang"),
-            account_btn,
         ],
+        [InlineKeyboardButton(text=t(lang, "set_btn_ar"), callback_data="set:ar")],
+        [InlineKeyboardButton(text=t(lang, "set_btn_ignored"), callback_data="set:ignored")],
+        [account_btn],
     ]
     if auto_renew:
         # Only shown while there is something to cancel — a standing card

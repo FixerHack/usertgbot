@@ -8,6 +8,8 @@ notice refer to another.
 
 from __future__ import annotations
 
+import asyncio
+
 from aiogram.types import InlineKeyboardMarkup, Message
 
 from userbot.context import WorkerContext
@@ -42,3 +44,24 @@ async def notify_owner(
         lat, lon = location
         return await ctx.notifier.send_location(chat_id, lat, lon, caption=text, reply_markup=reply_markup)
     return await ctx.notifier.send_text(chat_id, text, reply_markup=reply_markup)
+
+
+async def notify_owner_briefly(ctx: WorkerContext, text: str, *, seconds: float = 8.0) -> bool:
+    """Tell the owner something in their own chat with the bot, then clear it.
+
+    For feedback that belongs to the owner and nobody else — the reply to
+    `.save`, say, which must not be posted into the chat being recorded. The
+    deletion runs as its own task so the caller is not held for `seconds`,
+    and a worker that shuts down first simply leaves the notice behind, which
+    is the harmless end of that trade.
+    """
+    sent = await notify_owner(ctx, text)
+    if sent is None:
+        return False
+
+    async def _clear() -> None:
+        await asyncio.sleep(seconds)
+        await ctx.notifier.delete_message(ctx.owner_telegram_id, sent.message_id)
+
+    asyncio.create_task(_clear())
+    return True
