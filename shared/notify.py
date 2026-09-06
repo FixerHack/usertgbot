@@ -5,7 +5,9 @@ observe the events) push notifications through this; the manager_bot service
 runs the /start side so owners can receive DMs.
 
 Delivery is best-effort: if the owner never started the manager bot, Telegram
-forbids the DM and `send_*` returns False instead of raising.
+forbids the DM and `send_*` returns None instead of raising. On success they
+hand back the sent message — a caller that posts two related messages needs
+the first one's id to tie them together.
 """
 
 from __future__ import annotations
@@ -14,7 +16,7 @@ import logging
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramAPIError
-from aiogram.types import BufferedInputFile, InlineKeyboardMarkup
+from aiogram.types import BufferedInputFile, InlineKeyboardMarkup, Message
 
 logger = logging.getLogger(__name__)
 
@@ -35,15 +37,14 @@ class ManagerNotifier:
         *,
         parse_mode: str = "HTML",
         reply_markup: InlineKeyboardMarkup | None = None,
-    ) -> bool:
+    ) -> Message | None:
         try:
-            await self._bot.send_message(
+            return await self._bot.send_message(
                 chat_id, text, parse_mode=parse_mode, disable_web_page_preview=True, reply_markup=reply_markup
             )
-            return True
         except TelegramAPIError as exc:
             _log_failure("text", chat_id, exc)
-            return False
+            return None
 
     async def send_photo(
         self,
@@ -53,19 +54,18 @@ class ManagerNotifier:
         caption: str = "",
         parse_mode: str = "HTML",
         reply_markup: InlineKeyboardMarkup | None = None,
-    ) -> bool:
+    ) -> Message | None:
         try:
-            await self._bot.send_photo(
+            return await self._bot.send_photo(
                 chat_id,
                 BufferedInputFile(photo, filename="photo.jpg"),
                 caption=caption or None,
                 parse_mode=parse_mode,
                 reply_markup=reply_markup,
             )
-            return True
         except TelegramAPIError as exc:
             _log_failure("photo", chat_id, exc)
-            return False
+            return None
 
     async def send_voice(
         self,
@@ -75,19 +75,18 @@ class ManagerNotifier:
         caption: str = "",
         parse_mode: str = "HTML",
         reply_markup: InlineKeyboardMarkup | None = None,
-    ) -> bool:
+    ) -> Message | None:
         try:
-            await self._bot.send_voice(
+            return await self._bot.send_voice(
                 chat_id,
                 BufferedInputFile(voice, filename="voice.ogg"),
                 caption=caption or None,
                 parse_mode=parse_mode,
                 reply_markup=reply_markup,
             )
-            return True
         except TelegramAPIError as exc:
             _log_failure("voice", chat_id, exc)
-            return False
+            return None
 
     async def send_video(
         self,
@@ -97,19 +96,18 @@ class ManagerNotifier:
         caption: str = "",
         parse_mode: str = "HTML",
         reply_markup: InlineKeyboardMarkup | None = None,
-    ) -> bool:
+    ) -> Message | None:
         try:
-            await self._bot.send_video(
+            return await self._bot.send_video(
                 chat_id,
                 BufferedInputFile(video, filename="video.mp4"),
                 caption=caption or None,
                 parse_mode=parse_mode,
                 reply_markup=reply_markup,
             )
-            return True
         except TelegramAPIError as exc:
             _log_failure("video", chat_id, exc)
-            return False
+            return None
 
     async def send_document(
         self,
@@ -120,19 +118,18 @@ class ManagerNotifier:
         caption: str = "",
         parse_mode: str = "HTML",
         reply_markup: InlineKeyboardMarkup | None = None,
-    ) -> bool:
+    ) -> Message | None:
         try:
-            await self._bot.send_document(
+            return await self._bot.send_document(
                 chat_id,
                 BufferedInputFile(document, filename=filename),
                 caption=caption or None,
                 parse_mode=parse_mode,
                 reply_markup=reply_markup,
             )
-            return True
         except TelegramAPIError as exc:
             _log_failure("document", chat_id, exc)
-            return False
+            return None
 
     async def send_location(
         self,
@@ -143,17 +140,19 @@ class ManagerNotifier:
         caption: str = "",
         parse_mode: str = "HTML",
         reply_markup: InlineKeyboardMarkup | None = None,
-    ) -> bool:
+    ) -> Message | None:
         try:
             # send_location has no caption param — send it as a separate
             # message right after, same as the location itself would read
-            await self._bot.send_location(chat_id, latitude=latitude, longitude=longitude)
+            sent = await self._bot.send_location(chat_id, latitude=latitude, longitude=longitude)
             if caption:
-                await self._bot.send_message(chat_id, caption, parse_mode=parse_mode, reply_markup=reply_markup)
-            return True
+                sent = await self._bot.send_message(
+                    chat_id, caption, parse_mode=parse_mode, reply_markup=reply_markup
+                )
+            return sent
         except TelegramAPIError as exc:
             _log_failure("location", chat_id, exc)
-            return False
+            return None
 
     async def close(self) -> None:
         await self._bot.session.close()

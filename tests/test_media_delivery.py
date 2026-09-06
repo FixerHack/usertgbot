@@ -20,34 +20,34 @@ from userbot.context import WorkerContext
 
 
 class _Notifier:
-    """Records what the manager bot was asked to send, in order."""
+    """Records what the manager bot was asked to send, in order, and hands
+    back a message id the way the real notifier does — one notice has to be
+    able to refer to another."""
 
     def __init__(self):
         self.sent: list[dict] = []
 
+    def _record(self, entry: dict):
+        self.sent.append(entry)
+        return SimpleNamespace(message_id=1000 + len(self.sent))
+
     async def send_text(self, chat_id, text, **kw):
-        self.sent.append({"as": "text", "text": text, **kw})
-        return True
+        return self._record({"as": "text", "text": text, **kw})
 
     async def send_photo(self, chat_id, photo, *, caption="", **kw):
-        self.sent.append({"as": "photo", "caption": caption, "bytes": photo, **kw})
-        return True
+        return self._record({"as": "photo", "caption": caption, "bytes": photo, **kw})
 
     async def send_voice(self, chat_id, voice, *, caption="", **kw):
-        self.sent.append({"as": "voice", "caption": caption, "bytes": voice, **kw})
-        return True
+        return self._record({"as": "voice", "caption": caption, "bytes": voice, **kw})
 
     async def send_video(self, chat_id, video, *, caption="", **kw):
-        self.sent.append({"as": "video", "caption": caption, "bytes": video, **kw})
-        return True
+        return self._record({"as": "video", "caption": caption, "bytes": video, **kw})
 
     async def send_document(self, chat_id, document, *, filename="file", caption="", **kw):
-        self.sent.append({"as": "document", "caption": caption, "bytes": document, "filename": filename, **kw})
-        return True
+        return self._record({"as": "document", "caption": caption, "bytes": document, "filename": filename, **kw})
 
     async def send_location(self, chat_id, lat, lon, *, caption="", **kw):
-        self.sent.append({"as": "location", "caption": caption, **kw})
-        return True
+        return self._record({"as": "location", "caption": caption, **kw})
 
 
 @pytest.fixture
@@ -120,12 +120,19 @@ async def test_a_deleted_sticker_still_says_who_sent_it(db_session, owner, monke
     )
 
     kinds = [m["as"] for m in notifier.sent]
-    assert kinds == ["text", "document"], "the notice goes on its own, the file follows"
+    # File first, notice second — the order captioned media already reads in.
+    assert kinds == ["document", "text"]
+    assert notifier.sent[0]["bytes"] == b"webp-bytes"
 
-    notice = notifier.sent[0]["text"]
+    notice = notifier.sent[1]["text"]
     assert "@sender" in notice and "@somechat" in notice
-    assert notifier.sent[0]["reply_markup"] is not None, "the ignore button rides with the notice"
-    assert notifier.sent[1]["bytes"] == b"webp-bytes"
+
+    markup = notifier.sent[1]["reply_markup"]
+    assert markup is not None, "the buttons ride with the notice"
+    # The delete button must name the sticker, or tapping it tidies the words
+    # and leaves the picture behind.
+    data = [b.callback_data for row in markup.inline_keyboard for b in row]
+    assert "notice:del:1001" in data
 
 
 async def test_a_deleted_sticker_with_no_text_is_called_a_sticker(db_session, owner, monkeypatch):
@@ -141,7 +148,7 @@ async def test_a_deleted_sticker_with_no_text_is_called_a_sticker(db_session, ow
         media=b"x", media_kind="sticker",
     )
 
-    assert formatting.kind_label("sticker", "uk") in notifier.sent[0]["text"]
+    assert formatting.kind_label("sticker", "uk") in notifier.sent[1]["text"]
 
 
 async def test_captioned_media_still_arrives_as_one_message(db_session, owner, monkeypatch):

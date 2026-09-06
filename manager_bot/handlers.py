@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 router = Router(name="manager_actions")
 
 
-@router.callback_query(F.data == "notice:del")
+@router.callback_query(F.data.startswith("notice:del"))
 async def on_delete_notice(callback: CallbackQuery) -> None:
     """Throw away one recovered message.
 
@@ -24,6 +24,16 @@ async def on_delete_notice(callback: CallbackQuery) -> None:
     hours, and there is no useful thing to say about that: the button is
     simply cleared so it stops looking live.
     """
+    # A sticker cannot carry its notice as a caption, so it arrives as its own
+    # message and the button carries its id. Delete the companion first: if
+    # that fails there is still a notice on screen explaining what it was.
+    _, _, companion = callback.data.partition("notice:del:")
+    if companion.isdigit():
+        try:
+            await callback.bot.delete_message(callback.message.chat.id, int(companion))
+        except Exception:
+            logger.debug("could not delete the companion message", exc_info=True)
+
     try:
         await callback.message.delete()
         await callback.answer()

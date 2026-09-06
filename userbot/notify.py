@@ -1,13 +1,14 @@
 """Thin helper the userbot handlers use to DM the owner via the manager bot.
 
-Returns False (never raises) when there's no notifier configured, no known
+Returns None (never raises) when there's no notifier configured, no known
 owner chat, or Telegram refuses the DM — callers can then fall back to acting
-in-chat.
+in-chat. On success it hands back the sent message, which is what lets one
+notice refer to another.
 """
 
 from __future__ import annotations
 
-from aiogram.types import InlineKeyboardMarkup
+from aiogram.types import InlineKeyboardMarkup, Message
 
 from userbot.context import WorkerContext
 
@@ -23,9 +24,9 @@ async def notify_owner(
     document_filename: str = "file",
     location: tuple[float, float] | None = None,
     reply_markup: InlineKeyboardMarkup | None = None,
-) -> bool:
+) -> Message | None:
     if ctx.notifier is None or not ctx.owner_telegram_id:
-        return False
+        return None
     chat_id = ctx.owner_telegram_id
     if voice is not None:
         return await ctx.notifier.send_voice(chat_id, voice, caption=text, reply_markup=reply_markup)
