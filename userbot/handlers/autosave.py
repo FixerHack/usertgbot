@@ -75,14 +75,18 @@ async def _capture_media(client, ctx, event) -> tuple[bytes | None, str | None, 
     as a plain document — loses native rendering (a GIF forwarded as a
     document doesn't autoplay, say) but still recovers the actual content,
     which is the point."""
-    if event.photo:
+    # Stickers first: a video sticker (.webm) also answers to `event.video`,
+    # and classifying one as a video would send it back as a playable clip.
+    if event.sticker:
+        kind = "sticker"
+    elif event.photo:
         kind = "photo"
     elif event.voice:
         kind = "voice"
     elif event.video or event.video_note:
         kind = "video"
     elif event.file is not None:
-        kind = "document"  # documents, GIFs, stickers, audio, etc.
+        kind = "document"  # documents, GIFs, audio, etc.
     else:
         return None, None, None
 
@@ -249,6 +253,15 @@ async def _handle(
         await notify_owner(ctx, notice, voice=media, reply_markup=kb)
     elif media_kind == "video":
         await notify_owner(ctx, notice, video=media, reply_markup=kb)
+    elif media_kind == "sticker":
+        # Two messages, on purpose. Telegram turns a .webp/.tgs/.webm document
+        # back into a sticker, and stickers cannot carry a caption — so the
+        # "who deleted what" line was being dropped on the floor, leaving the
+        # owner with a bare image and no idea who sent it. The notice goes on
+        # its own so nothing can swallow it, whatever Telegram decides to do
+        # with the file.
+        await notify_owner(ctx, notice, reply_markup=kb)
+        await notify_owner(ctx, "", document=media, document_filename=media_filename or "sticker.webp")
     elif media_kind == "document":
         await notify_owner(ctx, notice, document=media, document_filename=media_filename or "file", reply_markup=kb)
     elif location is not None:

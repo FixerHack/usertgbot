@@ -941,6 +941,7 @@ _TR: dict[str, tuple[str, str, str]] = {
     "kind_video": ("відео", "видео", "video"),
     "kind_media": ("медіа", "медиа", "media"),
     "kind_document": ("файл", "файл", "file"),
+    "kind_sticker": ("стікер", "стикер", "sticker"),
     "kind_location": ("локація", "локация", "location"),
     "btn_ignore_chat": ("🚫 Ігнорувати цей чат", "🚫 Игнорировать этот чат", "🚫 Ignore this chat"),
     "unknown": ("невідомо", "неизвестно", "unknown"),

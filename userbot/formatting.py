@@ -116,7 +116,7 @@ def kind_label(kind: str, lang: str = "uk") -> str:
     """`"photo"`/`"voice"`/`"video"`/`"document"`/`"location"` -> localized word, e.g. "фото"."""
     return (
         _t(f"kind_{kind}", lang)
-        if kind in ("photo", "voice", "video", "document", "location", "media")
+        if kind in ("photo", "voice", "video", "document", "location", "media", "sticker")
         else _t("kind_media", lang)
     )
 
