@@ -242,6 +242,15 @@ async def _do_send(client: TelegramClient, event: events.NewMessage.Event, ctx: 
     plan = get_plan(gate.tariff)
     chat_id = event.chat_id
 
+    # Cleared here rather than after the limits: every path below is one where
+    # the command has been read and acted on, and a `.send 10 ...` left sitting
+    # in a client's chat because a limit stopped it is the one outcome nobody
+    # wants. The notices that follow explain what happened on their own.
+    try:
+        await event.delete()
+    except Exception:
+        logger.debug(".send: could not remove the command message", exc_info=True)
+
     if not 1 <= count <= plan.send_max_count:
         await _notice(client, chat_id, t(ctx.owner_lang, "ub_send_bad_count", max=plan.send_max_count))
         return
@@ -273,7 +282,6 @@ async def _do_send(client: TelegramClient, event: events.NewMessage.Event, ctx: 
         await _notice(client, chat_id, text)
         return
 
-    await event.delete()
     for i in range(count):
         try:
             await client.send_message(chat_id, text)

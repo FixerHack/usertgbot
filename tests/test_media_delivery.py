@@ -311,7 +311,14 @@ def _send_event(count: str = "999"):
     past the gate is post a "too many" notice, which makes "did it get past
     the gate" observable without actually sending anything."""
     match = SimpleNamespace(group=lambda n: count if n == 1 else "text")
-    return SimpleNamespace(pattern_match=match, chat_id=-100, reply=_noop_reply)
+    deleted: list[int] = []
+
+    async def delete():
+        deleted.append(1)
+
+    event = SimpleNamespace(pattern_match=match, chat_id=-100, reply=_noop_reply, delete=delete)
+    event.deleted = deleted
+    return event
 
 
 async def _noop_reply(text, **kw):
@@ -339,7 +346,9 @@ async def _run_send(db_session, owner, monkeypatch, *, enabled: bool) -> list[st
 
     client.send_message = _send_message
     commands.register(client, _ctx(owner.id, _Notifier()))
-    await client.handlers["handle_send"](_send_event())
+    event = _send_event()
+    await client.handlers["handle_send"](event)
+    _run_send.last_event = event
     return posted
 
 
@@ -360,3 +369,11 @@ async def test_send_can_be_switched_off(db_session, owner, monkeypatch):
 async def test_send_still_runs_while_the_switch_is_on(db_session, owner, monkeypatch):
     """Without this the test above would pass even with the switch removed."""
     assert await _run_send(db_session, owner, monkeypatch, enabled=True) != []
+
+
+async def test_a_send_stopped_by_a_limit_still_clears_its_command(db_session, owner, monkeypatch):
+    """The limit notice removes itself after a couple of seconds; the command
+    used to stay, leaving ".send 10 ..." sitting in a client's chat because a
+    limit stopped it."""
+    await _run_send(db_session, owner, monkeypatch, enabled=True)
+    assert _run_send.last_event.deleted == [1]
