@@ -94,6 +94,11 @@ def _command_event(*, minutes: str | None = None, chat_id: int = -100, private: 
     async def get_reply_message():
         return SimpleNamespace(sender_id=reply_to)
 
+    deleted: list[int] = []
+
+    async def delete():
+        deleted.append(1)
+
     event = SimpleNamespace(
         pattern_match=SimpleNamespace(group=lambda n: minutes),
         chat_id=chat_id,
@@ -102,9 +107,11 @@ def _command_event(*, minutes: str | None = None, chat_id: int = -100, private: 
         get_reply_message=get_reply_message,
         respond=respond,
         reply=reply,
+        delete=delete,
     )
     event.responses = responses
     event.replies = replies
+    event.deleted = deleted
     return event
 
 
@@ -149,7 +156,7 @@ async def test_a_group_mute_needs_a_reply_to_know_who(db_session, owner, monkeyp
     ctx = await _run_command(db_session, owner, monkeypatch, "handle_mute", event)
 
     assert ctx.muted == {}
-    assert event.replies, "the owner has to be told why nothing happened"
+    assert event.responses, "the owner has to be told why nothing happened"
 
 
 async def test_a_group_mute_targets_the_person_replied_to(db_session, owner, monkeypatch):
@@ -252,3 +259,26 @@ async def test_anti_delete_does_not_hand_a_muted_person_back(db_session, owner, 
         )
     )
     assert remembered == [], "nothing cached means nothing to restore"
+
+
+async def test_the_command_takes_itself_off_the_screen(db_session, owner, monkeypatch):
+    """Every other dot-command does. Leaving ".mute 2" in the chat clutters it
+    and tells the other side exactly what was just done."""
+    event = _command_event(minutes="2", chat_id=555)
+    await _run_command(db_session, owner, monkeypatch, "handle_mute", event)
+    assert event.deleted == [1]
+
+
+async def test_unmute_clears_its_command_too(db_session, owner, monkeypatch):
+    await _run_command(db_session, owner, monkeypatch, "handle_mute", _command_event(chat_id=555))
+    event = _command_event(chat_id=555)
+    await _run_command(db_session, owner, monkeypatch, "handle_unmute", event)
+    assert event.deleted == [1]
+
+
+async def test_a_command_that_could_not_run_still_clears_itself(db_session, owner, monkeypatch):
+    """A failed .mute left on screen is the same leak of intent as a working
+    one."""
+    event = _command_event(chat_id=-100, private=False)
+    await _run_command(db_session, owner, monkeypatch, "handle_mute", event)
+    assert event.deleted == [1]

@@ -42,6 +42,16 @@ UNMUTE_RE = re.compile(r"^\.unmute\s*$")
 MAX_MUTE_MINUTES = 365 * 24 * 60
 
 
+async def _clear_command(event) -> None:
+    """Every other dot-command takes its own trigger off the screen; these two
+    were the exception. Leaving `.mute 2` sitting in the chat both clutters it
+    and tells the other side exactly what was just done."""
+    try:
+        await event.delete()
+    except Exception:
+        logger.debug("mute: could not remove the command message", exc_info=True)
+
+
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -110,7 +120,8 @@ def register(client: TelegramClient, ctx: WorkerContext) -> None:
 
         target = await _target_of(event)
         if target is None:
-            await event.reply(t(ctx.owner_lang, "ub_mute_no_target"))
+            await event.respond(t(ctx.owner_lang, "ub_mute_no_target"))
+            await _clear_command(event)
             return
 
         raw = event.pattern_match.group(1)
@@ -132,6 +143,7 @@ def register(client: TelegramClient, ctx: WorkerContext) -> None:
             else t(ctx.owner_lang, "ub_muted_forever", user=who)
         )
         await event.respond(text)
+        await _clear_command(event)
 
     @client.on(events.NewMessage(outgoing=True, pattern=UNMUTE_RE))
     async def handle_unmute(event: events.NewMessage.Event) -> None:
@@ -144,7 +156,8 @@ def register(client: TelegramClient, ctx: WorkerContext) -> None:
 
         target = await _target_of(event)
         if target is None:
-            await event.reply(t(ctx.owner_lang, "ub_mute_no_target"))
+            await event.respond(t(ctx.owner_lang, "ub_mute_no_target"))
+            await _clear_command(event)
             return
 
         async with get_session() as db:
@@ -155,10 +168,12 @@ def register(client: TelegramClient, ctx: WorkerContext) -> None:
         ctx.muted.pop((event.chat_id, target), None)
 
         if not removed:
-            await event.reply(t(ctx.owner_lang, "ub_not_muted"))
+            await event.respond(t(ctx.owner_lang, "ub_not_muted"))
+            await _clear_command(event)
             return
         who = await entities.ref(client, target, ctx.owner_lang)
         await event.respond(t(ctx.owner_lang, "ub_unmuted", user=who))
+        await _clear_command(event)
 
     @client.on(events.NewMessage(incoming=True))
     async def drop_muted(event: events.NewMessage.Event) -> None:
