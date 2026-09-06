@@ -36,6 +36,7 @@ class TariffPlan:
     send_max_per_hour: int = 0
     has_mute: bool = False           # .mute / .unmute
     has_record: bool = False         # .save / .unsave — transcribe a chat
+    has_clone: bool = False          # .clone / .stopc — echo someone back
     available: bool = True     # False => shown as "in development", not purchasable
 
     # NOTE: the human-readable feature bullets live in shared.i18n._FEATURES,
@@ -80,6 +81,7 @@ PLANS: dict[Tariff, TariffPlan] = {
         send_max_per_hour=10,
         has_mute=True,
         has_record=True,
+        has_clone=True,
     ),
 }
 
@@ -110,6 +112,8 @@ def tariff_grants_command(tariff: Tariff | str, command: str) -> bool:
         return plan.has_mute
     if command in ("save", "unsave"):
         return plan.has_record
+    if command in ("clone", "stopc"):
+        return plan.has_clone
     return command in BASE_COMMANDS
 
 

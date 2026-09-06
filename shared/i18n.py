@@ -920,6 +920,33 @@ _TR: dict[str, tuple[str, str, str]] = {
         "❌ Количество должно быть от 1 до {max}: .send 10 текст",
         "❌ Count must be between 1 and {max}: .send 10 text",
     ),
+    # --- .clone / .stopc ---
+    "ub_clone_started": (
+        "🪞 Клоную {user}. Зупинити — .stopc",
+        "🪞 Клонирую {user}. Остановить — .stopc",
+        "🪞 Cloning {user}. Stop with .stopc",
+    ),
+    "ub_clone_stopped": (
+        "🛑 Клонування {user} зупинено.",
+        "🛑 Клонирование {user} остановлено.",
+        "🛑 Stopped cloning {user}.",
+    ),
+    "ub_clone_not_running": (
+        "Цей користувач не клонується.",
+        "Этот пользователь не клонируется.",
+        "That user is not being cloned.",
+    ),
+    "ub_clone_no_target": (
+        "Дайте відповідь на повідомлення того, кого треба клонувати.",
+        "Ответьте на сообщение того, кого нужно клонировать.",
+        "Reply to a message from the person you want to clone.",
+    ),
+    "ub_clone_flood_stopped": (
+        "🛑 Клонування зупинено: Telegram обмежив надсилання.",
+        "🛑 Клонирование остановлено: Telegram ограничил отправку.",
+        "🛑 Cloning stopped: Telegram rate-limited the sending.",
+    ),
+    "feat_clone": ("🪞 .clone — клонування", "🪞 .clone — клонирование", "🪞 .clone — mirroring"),
     # --- .save / .unsave ---
     "rec_started": (
         "💾 Запис чату почато. Зупинити — .unsave",

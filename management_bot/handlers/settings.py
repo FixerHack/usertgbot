@@ -180,12 +180,13 @@ _FEATURE_ROWS = [
     [("viewonce_photo", "feat_viewonce_photo"), ("viewonce_voice", "feat_viewonce_voice")],
     [("viewonce_video", "feat_viewonce_video"), ("send", "feat_send")],
     [("mute", "feat_mute"), ("record", "feat_record")],
+    [("clone", "feat_clone")],
 ]
 
 # Switches whose feature the tariff may not include at all. A switch for
 # something the plan does not grant is a lie either way round: off looks like
 # the reason it does not work, on promises something that will not happen.
-_TARIFF_GATED = {"send": "send", "mute": "mute", "record": "save"}
+_TARIFF_GATED = {"send": "send", "mute": "mute", "record": "save", "clone": "clone"}
 
 
 def _features_menu(features: Features, lang: str, *, tariff: str | None = None) -> InlineKeyboardMarkup:

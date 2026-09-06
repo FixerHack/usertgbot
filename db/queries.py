@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import (
     ChatRecording,
+    ClonedUser,
     MutedUser,
     RecordedMessage,
     CheckUsage,
@@ -611,3 +612,45 @@ async def get_recorded_messages(session: AsyncSession, recording_id: int) -> lis
         .order_by(RecordedMessage.id)
     )
     return list(result.scalars())
+
+
+# --- clones ----------------------------------------------------------------
+
+
+async def get_clones(session: AsyncSession, owner_user_id: int) -> list[ClonedUser]:
+    result = await session.execute(select(ClonedUser).where(ClonedUser.owner_user_id == owner_user_id))
+    return list(result.scalars())
+
+
+async def set_clone(
+    session: AsyncSession, *, owner_user_id: int, chat_id: int, target_user_id: int
+) -> ClonedUser:
+    result = await session.execute(
+        select(ClonedUser).where(
+            ClonedUser.owner_user_id == owner_user_id,
+            ClonedUser.chat_id == chat_id,
+            ClonedUser.target_user_id == target_user_id,
+        )
+    )
+    row = result.scalar_one_or_none()
+    if row is None:
+        row = ClonedUser(owner_user_id=owner_user_id, chat_id=chat_id, target_user_id=target_user_id)
+        session.add(row)
+        await session.flush()
+    return row
+
+
+async def clear_clone(session: AsyncSession, *, owner_user_id: int, chat_id: int, target_user_id: int) -> bool:
+    result = await session.execute(
+        select(ClonedUser).where(
+            ClonedUser.owner_user_id == owner_user_id,
+            ClonedUser.chat_id == chat_id,
+            ClonedUser.target_user_id == target_user_id,
+        )
+    )
+    row = result.scalar_one_or_none()
+    if row is None:
+        return False
+    await session.delete(row)
+    await session.flush()
+    return True

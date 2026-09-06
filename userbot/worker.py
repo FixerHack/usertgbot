@@ -14,7 +14,7 @@ from shared.i18n import resolve_lang, t
 from shared.notify import ManagerNotifier
 from userbot.config import settings
 from userbot.context import WorkerContext
-from userbot.handlers import autoresponder, autosave, commands, mute, record, viewonce
+from userbot.handlers import autoresponder, autosave, clone, commands, mute, record, viewonce
 from userbot.message_cache import RecentMessageCache
 
 logger = logging.getLogger(__name__)
@@ -123,6 +123,8 @@ async def run_worker(
     await mute.load_mutes(ctx)
     record.register(client, ctx)
     await record.load_recordings(ctx)
+    clone.register(client, ctx)
+    await clone.load_clones(ctx)
     autosave.register(client, ctx)
     autoresponder.register(client, ctx)
     viewonce.register(client, ctx)

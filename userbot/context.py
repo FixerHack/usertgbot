@@ -27,3 +27,5 @@ class WorkerContext:
     # chat_id -> recording id, for the same reason: the collector runs on
     # every message in every chat.
     recording: dict[int, int] = field(default_factory=dict)
+    # (chat_id, user_id) pairs being echoed back — same reason again.
+    cloned: set[tuple[int, int]] = field(default_factory=set)

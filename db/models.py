@@ -313,6 +313,27 @@ class ConnectToken(Base):
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
+class ClonedUser(Base):
+    """Someone whose messages are echoed straight back at them.
+
+    Same shape as MutedUser and for the same reason: a target inside one chat.
+    Persisted rather than kept in memory so `.clone` means what it says —
+    "until .stopc" and not "until the next deploy".
+    """
+
+    __tablename__ = "cloned_users"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    owner_user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    chat_id: Mapped[int] = mapped_column(BigInteger)
+    target_user_id: Mapped[int] = mapped_column(BigInteger)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("owner_user_id", "chat_id", "target_user_id", name="uq_clone_target"),
+    )
+
+
 class ChatRecording(Base):
     """One `.save` … `.unsave` span in a chat.
 
