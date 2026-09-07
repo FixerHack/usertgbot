@@ -390,3 +390,33 @@ class _FakeState:
     async def update_data(self, **kwargs):
         self._data.update(kwargs)
         return dict(self._data)
+
+
+# --- the id in the button is a number someone can change --------------------
+
+
+async def test_another_owners_recording_cannot_be_stopped_or_read(db_session, premium_owner, monkeypatch):
+    """The stop button carries a recording id, and what it returns is somebody's
+    conversation. The handler checks ownership; the queries no longer rely on
+    it having done so."""
+    from db import queries
+
+    _patch(monkeypatch, db_session)
+    stranger = await storage.upsert_user(db_session, 992003, username="stranger")
+    theirs = await queries.start_recording(
+        db_session, owner_user_id=stranger.id, chat_id=777, chat_title="@private"
+    )
+    await queries.add_recorded_message(
+        db_session, recording_id=theirs.id,
+        sent_at=datetime.now(timezone.utc).replace(tzinfo=None),
+        sender="@private", is_outgoing=False, text="not for you",
+    )
+    await db_session.commit()
+
+    leaked = await queries.get_recorded_messages(db_session, theirs.id, owner_user_id=premium_owner.id)
+    assert leaked == [], "another owner's transcript came back"
+
+    await queries.stop_recording(db_session, theirs.id, owner_user_id=premium_owner.id)
+    await db_session.commit()
+    still_running = await queries.get_active_recordings(db_session, stranger.id)
+    assert [r.id for r in still_running] == [theirs.id], "another owner's recording was stopped"

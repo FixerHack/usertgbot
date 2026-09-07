@@ -569,8 +569,22 @@ async def start_recording(
     return row
 
 
-async def stop_recording(session: AsyncSession, recording_id: int, *, now: datetime | None = None) -> None:
+async def stop_recording(
+    session: AsyncSession,
+    recording_id: int,
+    *,
+    owner_user_id: int | None = None,
+    now: datetime | None = None,
+) -> None:
+    """Stop one recording. `owner_user_id` scopes it to that owner.
+
+    The id arrives from a button, so it is a number someone can change. Callers
+    do check ownership before calling, but a transcript of a private chat is
+    the wrong thing to guard by caller discipline alone.
+    """
     row = await session.get(ChatRecording, recording_id)
+    if row is not None and owner_user_id is not None and row.owner_user_id != owner_user_id:
+        return
     if row is not None and row.stopped_at is None:
         row.stopped_at = (now or _utcnow()).astimezone(timezone.utc).replace(tzinfo=None)
         await session.flush()
@@ -603,10 +617,24 @@ async def count_recorded(session: AsyncSession, recording_id: int) -> int:
     ) or 0
 
 
-async def get_recorded_messages(session: AsyncSession, recording_id: int) -> list[RecordedMessage]:
+async def get_recorded_messages(
+    session: AsyncSession, recording_id: int, *, owner_user_id: int | None = None
+) -> list[RecordedMessage]:
+    """The messages of one recording; `owner_user_id` scopes it to that owner.
+
+    Same reason as `stop_recording`: the id comes from a button, and what it
+    returns is somebody's conversation.
+    """
+    conditions = [RecordedMessage.recording_id == recording_id]
+    if owner_user_id is not None:
+        conditions.append(
+            RecordedMessage.recording_id.in_(
+                select(ChatRecording.id).where(ChatRecording.owner_user_id == owner_user_id)
+            )
+        )
     result = await session.execute(
         select(RecordedMessage)
-        .where(RecordedMessage.recording_id == recording_id)
+        .where(*conditions)
         # id, not sent_at: two messages in the same second are common in a
         # chat, and the order they arrived in is the order they were said.
         .order_by(RecordedMessage.id)

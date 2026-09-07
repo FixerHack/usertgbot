@@ -889,8 +889,8 @@ async def on_recording_stop(callback: CallbackQuery) -> None:
             return
 
         title = target.chat_title or str(target.chat_id)
-        await queries.stop_recording(db, recording_id)
-        messages = await queries.get_recorded_messages(db, recording_id)
+        await queries.stop_recording(db, recording_id, owner_user_id=user.id)
+        messages = await queries.get_recorded_messages(db, recording_id, owner_user_id=user.id)
         await db.commit()
         archive = build_archive(title, messages, lang)
         text, kb = await _recordings_screen(db, callback.message.chat.id, lang)
