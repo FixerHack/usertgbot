@@ -21,7 +21,6 @@ from __future__ import annotations
 import logging
 import re
 from datetime import datetime, timezone
-from zoneinfo import ZoneInfo
 
 from telethon import TelegramClient, events
 
@@ -36,6 +35,7 @@ from db.queries import (
 )
 from db.session import get_session
 from shared.i18n import t
+from shared.transcript import build_archive
 from userbot import entities, formatting
 from userbot.context import WorkerContext
 from userbot.notify import notify_owner, notify_owner_briefly
@@ -45,27 +45,8 @@ logger = logging.getLogger(__name__)
 SAVE_RE = re.compile(r"^\.save\s*$")
 UNSAVE_RE = re.compile(r"^\.unsave\s*$")
 
-# Timestamps in an archive are read by a person in Kyiv, not by a server.
-KYIV = ZoneInfo("Europe/Kyiv")
-
 # Any dot-command is ours, not part of the conversation being transcribed.
 _OWN_COMMAND = re.compile(r"^\.[a-z]+\b")
-
-
-def _local(moment: datetime) -> datetime:
-    if moment.tzinfo is None:
-        moment = moment.replace(tzinfo=timezone.utc)
-    return moment.astimezone(KYIV)
-
-
-def build_archive(title: str, rows, lang: str) -> str:
-    """The file itself. One line per message, oldest first."""
-    header = t(lang, "rec_archive_header", chat=title)
-    lines = [header, "=" * 30]
-    for row in rows:
-        who = t(lang, "rec_me") if row.is_outgoing else row.sender
-        lines.append(f"[{_local(row.sent_at):%d.%m.%Y %H:%M:%S}] {who}: {row.text}")
-    return "\n".join(lines) + "\n"
 
 
 def _describe(event, lang: str) -> str:
@@ -115,7 +96,7 @@ async def _tell_owner(client, ctx: WorkerContext, chat_id: int, text: str) -> No
 def register(client: TelegramClient, ctx: WorkerContext) -> None:
     @client.on(events.NewMessage(outgoing=True, pattern=SAVE_RE))
     async def handle_save(event: events.NewMessage.Event) -> None:
-        from userbot.handlers.commands import _feature_enabled, _gate, _notice, clear_command
+        from userbot.handlers.commands import _feature_enabled, _gate, clear_command
 
         if not await _feature_enabled(ctx, "record"):
             await clear_command(event)

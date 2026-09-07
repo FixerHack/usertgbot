@@ -1,5 +1,6 @@
 """One TelegramClient worker per active client session."""
 
+import asyncio
 import logging
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
@@ -87,6 +88,20 @@ async def _mark_session_dead(
         await notifier.close()
 
 
+_RECORDING_REFRESH_SECONDS = 20
+
+
+async def _refresh_recordings(ctx: WorkerContext) -> None:
+    while True:
+        await asyncio.sleep(_RECORDING_REFRESH_SECONDS)
+        try:
+            await record.load_recordings(ctx)
+        except Exception:
+            # A failed refresh must not take the worker with it; the next one
+            # is twenty seconds away.
+            logger.exception("could not refresh the recording list")
+
+
 async def run_worker(
     session_id: int,
     owner_user_id: int,
@@ -136,7 +151,15 @@ async def run_worker(
                 await _mark_session_dead(ctx, session_id, lang, "not authorized", session_blob)
                 return
             logger.info("worker started for session_id=%s owner_user_id=%s", session_id, owner_user_id)
-            await client.run_until_disconnected()
+            # Recordings can also be started and stopped from ⚙️ Налаштування,
+            # which writes to the database and has no way to reach this
+            # process. A short poll is the whole synchronisation: one query
+            # every 20 s, against a change a person made by hand.
+            refresher = asyncio.create_task(_refresh_recordings(ctx))
+            try:
+                await client.run_until_disconnected()
+            finally:
+                refresher.cancel()
     except _DEAD_SESSION_ERRORS as exc:
         # Covers both connect() refusing the auth key up front and the session
         # being killed mid-flight while run_until_disconnected() holds it.

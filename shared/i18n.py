@@ -944,6 +944,52 @@ _TR: dict[str, tuple[str, str, str]] = {
         "❌ Количество должно быть от 1 до {max}: .send 10 текст",
         "❌ Count must be between 1 and {max}: .send 10 text",
     ),
+    # --- recordings, managed from settings ---
+    "rec_menu_title": (
+        "💾 <b>Запис чатів</b>\n\nЗаписані повідомлення приходять сюди файлом.",
+        "💾 <b>Запись чатов</b>\n\nЗаписанные сообщения приходят сюда файлом.",
+        "💾 <b>Chat recording</b>\n\nRecorded messages arrive here as a file.",
+    ),
+    "rec_menu_none": (
+        "Зараз нічого не записується.",
+        "Сейчас ничего не записывается.",
+        "Nothing is being recorded right now.",
+    ),
+    "rec_btn_open": ("💾 Запис чатів", "💾 Запись чатов", "💾 Chat recording"),
+    "rec_btn_pick": ("➕ Обрати контакт", "➕ Выбрать контакт", "➕ Pick a contact"),
+    "rec_btn_stop": ("⏹ {chat}", "⏹ {chat}", "⏹ {chat}"),
+    "rec_pick_prompt": (
+        "Оберіть, чий чат записувати — кнопкою нижче.",
+        "Выберите, чей чат записывать — кнопкой ниже.",
+        "Choose whose chat to record, with the button below.",
+    ),
+    "rec_pick_button": ("👤 Обрати контакт", "👤 Выбрать контакт", "👤 Pick a contact"),
+    "rec_pick_cancel": ("Скасувати", "Отменить", "Cancel"),
+    "rec_started_for": (
+        "💾 Записую чат з {chat}. Зупинити — тут або командою .unsave у самому чаті.",
+        "💾 Записываю чат с {chat}. Остановить — здесь или командой .unsave в самом чате.",
+        "💾 Recording the chat with {chat}. Stop it here, or with .unsave in the chat itself.",
+    ),
+    "rec_already_for": (
+        "Цей чат уже записується.",
+        "Этот чат уже записывается.",
+        "That chat is already being recorded.",
+    ),
+    "rec_stopped_for": (
+        "📁 Запис зупинено, {count} повідомлень.",
+        "📁 Запись остановлена, {count} сообщений.",
+        "📁 Recording stopped, {count} messages.",
+    ),
+    "rec_stopped_empty": (
+        "📁 Запис зупинено. Нічого не записалося — у чаті не було повідомлень.",
+        "📁 Запись остановлена. Ничего не записалось — в чате не было сообщений.",
+        "📁 Recording stopped. Nothing was captured — there were no messages.",
+    ),
+    "rec_needs_account": (
+        "Спершу підключіть акаунт — записувати нічого.",
+        "Сначала подключите аккаунт — записывать нечего.",
+        "Connect an account first — there is nothing to record.",
+    ),
     # --- .clone / .stopc ---
     "ub_clone_started": (
         "🪞 Клоную {user}. Зупинити — .stopc",
