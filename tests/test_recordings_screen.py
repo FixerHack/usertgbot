@@ -134,6 +134,43 @@ def test_the_picker_asks_telegram_rather_than_guessing():
     assert button.request_users.user_is_bot is False, "a bot chat is not worth recording"
 
 
+class _State:
+    """Enough FSMContext for the picker: it stores one message id."""
+
+    def __init__(self, data: dict | None = None) -> None:
+        self.data = dict(data or {})
+
+    async def get_data(self) -> dict:
+        return dict(self.data)
+
+    async def update_data(self, **kwargs) -> dict:
+        self.data.update(kwargs)
+        return dict(self.data)
+
+
+class _Bot:
+    def __init__(self) -> None:
+        self.deleted: list[tuple[int, int]] = []
+
+    async def delete_message(self, chat_id: int, message_id: int) -> None:
+        self.deleted.append((chat_id, message_id))
+
+
+def _shared_message(bot=None, *, request_id=None, message_id=777, answered=None):
+    return SimpleNamespace(
+        chat=SimpleNamespace(id=992001),
+        message_id=message_id,
+        bot=bot or _Bot(),
+        from_user=SimpleNamespace(language_code="uk", id=992001),
+        users_shared=SimpleNamespace(
+            request_id=settings_handlers._RECORD_REQUEST_ID if request_id is None else request_id,
+            user_ids=[6115569877],
+            users=[SimpleNamespace(username="mryoucode", first_name=None, last_name=None)],
+        ),
+        answer=lambda text, **kw: (answered.append(text) if answered is not None else None) or _async_none(),
+    )
+
+
 async def test_picking_a_contact_starts_a_recording_for_that_chat(db_session, premium_owner, monkeypatch):
     """A private chat's id IS the other person's user id, which is exactly what
     the picker returns."""
@@ -141,19 +178,9 @@ async def test_picking_a_contact_starts_a_recording_for_that_chat(db_session, pr
 
     _patch(monkeypatch, db_session)
     answered: list[str] = []
+    message = _shared_message(answered=answered)
 
-    message = SimpleNamespace(
-        chat=SimpleNamespace(id=992001),
-        from_user=SimpleNamespace(language_code="uk", id=992001),
-        users_shared=SimpleNamespace(
-            request_id=settings_handlers._RECORD_REQUEST_ID,
-            user_ids=[6115569877],
-            users=[SimpleNamespace(username="mryoucode", first_name=None, last_name=None)],
-        ),
-        answer=lambda text, **kw: answered.append(text) or _async_none(),
-    )
-
-    await settings_handlers.on_user_picked(message)
+    await settings_handlers.on_user_picked(message, _State())
 
     rows = await queries.get_active_recordings(db_session, premium_owner.id)
     assert [r.chat_id for r in rows] == [6115569877]
@@ -167,20 +194,8 @@ async def test_picking_the_same_contact_twice_does_not_double_up(db_session, pre
     _patch(monkeypatch, db_session)
     answered: list[str] = []
 
-    def _message():
-        return SimpleNamespace(
-            chat=SimpleNamespace(id=992001),
-            from_user=SimpleNamespace(language_code="uk", id=992001),
-            users_shared=SimpleNamespace(
-                request_id=settings_handlers._RECORD_REQUEST_ID,
-                user_ids=[6115569877],
-                users=[SimpleNamespace(username="mryoucode", first_name=None, last_name=None)],
-            ),
-            answer=lambda text, **kw: answered.append(text) or _async_none(),
-        )
-
-    await settings_handlers.on_user_picked(_message())
-    await settings_handlers.on_user_picked(_message())
+    await settings_handlers.on_user_picked(_shared_message(answered=answered), _State())
+    await settings_handlers.on_user_picked(_shared_message(answered=answered), _State())
 
     rows = await queries.get_active_recordings(db_session, premium_owner.id)
     assert len(rows) == 1
@@ -193,15 +208,91 @@ async def test_a_reply_from_another_picker_is_ignored(db_session, premium_owner,
     from db import queries
 
     _patch(monkeypatch, db_session)
-    message = SimpleNamespace(
-        chat=SimpleNamespace(id=992001),
-        from_user=SimpleNamespace(language_code="uk", id=992001),
-        users_shared=SimpleNamespace(request_id=99, user_ids=[123], users=[]),
-        answer=lambda text, **kw: _async_none(),
+    bot = _Bot()
+
+    await settings_handlers.on_user_picked(_shared_message(bot, request_id=99), _State())
+
+    assert await queries.get_active_recordings(db_session, premium_owner.id) == []
+    assert bot.deleted == [], "someone else's picker is not ours to clean up"
+
+
+# --- the paper trail -------------------------------------------------------
+
+
+async def test_picking_takes_the_prompt_and_the_shared_line_back_down(
+    db_session, premium_owner, monkeypatch
+):
+    """Both are machinery, not conversation; left alone they stacked up a
+    fresh pair on screen every time the picker was opened."""
+    _patch(monkeypatch, db_session)
+    bot = _Bot()
+
+    await settings_handlers.on_user_picked(
+        _shared_message(bot, message_id=777), _State({"rec_prompt_id": 555})
     )
 
-    await settings_handlers.on_user_picked(message)
-    assert await queries.get_active_recordings(db_session, premium_owner.id) == []
+    assert bot.deleted == [(992001, 555), (992001, 777)]
+
+
+async def test_a_missing_prompt_does_not_stop_the_recording(db_session, premium_owner, monkeypatch):
+    """After a restart there is no remembered prompt id — one stranded line is
+    not a reason to refuse the recording."""
+    from db import queries
+
+    _patch(monkeypatch, db_session)
+    bot = _Bot()
+
+    await settings_handlers.on_user_picked(_shared_message(bot), _State())
+
+    assert bot.deleted == [(992001, 777)]
+    assert await queries.get_active_recordings(db_session, premium_owner.id)
+
+
+async def test_a_delete_that_fails_does_not_stop_the_recording(db_session, premium_owner, monkeypatch):
+    from aiogram.exceptions import TelegramBadRequest
+    from db import queries
+
+    _patch(monkeypatch, db_session)
+
+    class _Refusing(_Bot):
+        async def delete_message(self, chat_id: int, message_id: int) -> None:
+            raise TelegramBadRequest(method=None, message="message can't be deleted")
+
+    await settings_handlers.on_user_picked(_shared_message(_Refusing()), _State())
+
+    assert await queries.get_active_recordings(db_session, premium_owner.id)
+
+
+# --- cancel ----------------------------------------------------------------
+
+
+async def test_cancel_answers_and_clears_the_keyboard(db_session, premium_owner, monkeypatch):
+    """Before this the button sent a word nothing handled: the picker keyboard
+    stayed up and the bot said nothing at all."""
+    _patch(monkeypatch, db_session)
+    bot = _Bot()
+    sent: list[tuple[str, object]] = []
+
+    message = SimpleNamespace(
+        chat=SimpleNamespace(id=992001),
+        message_id=778,
+        bot=bot,
+        from_user=SimpleNamespace(language_code="uk", id=992001),
+        answer=lambda text, **kw: sent.append((text, kw.get("reply_markup"))) or _async_none(),
+    )
+
+    await settings_handlers.on_pick_cancel(message, _State({"rec_prompt_id": 556}))
+
+    assert bot.deleted == [(992001, 556), (992001, 778)]
+    assert sent and sent[0][0] == t("uk", "rec_pick_cancelled")
+    assert sent[0][1] is not None, "the picker keyboard has to be replaced by something"
+
+
+def test_cancel_is_matched_in_every_language():
+    from shared.i18n import variants
+
+    labels = variants("rec_pick_cancel")
+    assert len(set(labels)) == 3
 
 
 async def _async_none():

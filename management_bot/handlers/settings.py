@@ -2,9 +2,11 @@
 (Pro), and the ignored-chats list. Values live in db.UserSettings (JSON) /
 db.MediaBlob / db.IgnoredChat; the userbot reads them at runtime."""
 
+import contextlib
 import logging
 
 from aiogram import F, Router
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -25,7 +27,7 @@ from management_bot import keyboards, storage
 from management_bot.handlers import connect
 from management_bot.payment import build_wayforpay
 from management_bot.storage import upsert_user
-from shared.i18n import lang_of, t
+from shared.i18n import lang_of, t, variants
 from shared.settings_schema import (
     Autoresponder,
     Features,
@@ -745,7 +747,7 @@ async def on_recordings(callback: CallbackQuery) -> None:
 
 
 @router.callback_query(F.data == "set:rec:pick")
-async def on_recordings_pick(callback: CallbackQuery) -> None:
+async def on_recordings_pick(callback: CallbackQuery, state: FSMContext) -> None:
     """Telegram's own contact picker. The bot has no idea what dialogs someone
     has; this asks them and hands back the id, which for a private chat is the
     chat id too."""
@@ -769,16 +771,48 @@ async def on_recordings_pick(callback: CallbackQuery) -> None:
         resize_keyboard=True,
         one_time_keyboard=True,
     )
-    await callback.message.answer(t(lang, "rec_pick_prompt"), reply_markup=keyboard)
+    prompt = await callback.message.answer(t(lang, "rec_pick_prompt"), reply_markup=keyboard)
+    # Remembered so the prompt can be taken back down with the reply it asked
+    # for; a restart only costs one stranded line, not a broken flow.
+    await state.update_data(rec_prompt_id=prompt.message_id)
     await callback.answer()
 
 
+async def _clear_pick(message: Message, state: FSMContext) -> None:
+    """Take the picker's paper trail back down.
+
+    The prompt and Telegram's "you shared a contact" line are both machinery,
+    not conversation, and they were stacking up a fresh pair on screen every
+    time someone opened the picker.
+    """
+    data = await state.get_data()
+    prompt_id = data.get("rec_prompt_id")
+    if prompt_id is not None:
+        await state.update_data(rec_prompt_id=None)
+    for message_id in (prompt_id, message.message_id):
+        if message_id is None:
+            continue
+        # Older than 48h, or already gone — nothing here is worth an error.
+        with contextlib.suppress(TelegramBadRequest):
+            await message.bot.delete_message(message.chat.id, message_id)
+
+
+@router.message(F.text.in_(variants("rec_pick_cancel")))
+async def on_pick_cancel(message: Message, state: FSMContext) -> None:
+    """Without this the cancel button is a lie: it sends a word the bot has no
+    handler for, so the picker keyboard stays up and nothing answers."""
+    lang = lang_of(message)
+    await _clear_pick(message, state)
+    await message.answer(t(lang, "rec_pick_cancelled"), reply_markup=keyboards.main_menu(lang))
+
+
 @router.message(F.users_shared)
-async def on_user_picked(message: Message) -> None:
+async def on_user_picked(message: Message, state: FSMContext) -> None:
     lang = lang_of(message)
     shared = message.users_shared
     if shared.request_id != _RECORD_REQUEST_ID or not shared.user_ids:
         return
+    await _clear_pick(message, state)
 
     chat_id = shared.user_ids[0]
     title = _shared_name(shared) or str(chat_id)

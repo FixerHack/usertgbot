@@ -965,6 +965,11 @@ _TR: dict[str, tuple[str, str, str]] = {
     ),
     "rec_pick_button": ("👤 Обрати контакт", "👤 Выбрать контакт", "👤 Pick a contact"),
     "rec_pick_cancel": ("Скасувати", "Отменить", "Cancel"),
+    "rec_pick_cancelled": (
+        "Скасовано.",
+        "Отменено.",
+        "Cancelled.",
+    ),
     "rec_started_for": (
         "💾 Записую чат з {chat}. Зупинити — тут або командою .unsave у самому чаті.",
         "💾 Записываю чат с {chat}. Остановить — здесь или командой .unsave в самом чате.",
