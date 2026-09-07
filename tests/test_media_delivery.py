@@ -378,3 +378,67 @@ async def test_a_send_stopped_by_a_limit_still_clears_its_command(db_session, ow
     limit stopped it."""
     await _run_send(db_session, owner, monkeypatch, enabled=True)
     assert _run_send.last_event.deleted == [1]
+
+
+# --- .check leaves nothing behind ------------------------------------------
+
+
+async def _run_check(db_session, owner, monkeypatch, *, quota_left: bool):
+    from db import queries
+    from userbot.handlers import commands
+
+    @contextlib.asynccontextmanager
+    async def fake_session():
+        yield db_session
+
+    monkeypatch.setattr(commands, "get_session", fake_session)
+    monkeypatch.setattr(commands.asyncio, "sleep", _noop_sleep)
+
+    if not quota_left:
+        # Burn the month's allowance so the limit path is the one taken.
+        for _ in range(10):
+            await queries.consume_check(db_session, owner.id, 10)
+        await db_session.commit()
+
+    posted: list[str] = []
+    deleted: list[int] = []
+
+    class _Client:
+        def __init__(self):
+            self.handlers = {}
+
+        def on(self, _e):
+            def d(f):
+                self.handlers[f.__name__] = f
+                return f
+
+            return d
+
+        async def send_message(self, chat_id, text):
+            posted.append(text)
+            return SimpleNamespace(delete=_noop_delete)
+
+    async def delete():
+        deleted.append(1)
+
+    event = SimpleNamespace(chat_id=-100, delete=delete, reply=_noop_reply, respond=_noop_reply)
+
+    client = _Client()
+    commands.register(client, _ctx(owner.id, _Notifier()))
+    await client.handlers["handle_check"](event)
+    return deleted, posted
+
+
+async def test_check_clears_its_command_even_when_the_quota_is_gone(db_session, owner, monkeypatch):
+    """`.check` is typed in a chat with the person being looked up. Leaving it
+    there tells them they were checked, and running out of quota is no reason
+    to make that exception."""
+    deleted, posted = await _run_check(db_session, owner, monkeypatch, quota_left=False)
+
+    assert deleted == [1]
+    assert posted, "and they are told why nothing happened"
+
+
+async def test_check_clears_its_command_on_the_happy_path_too(db_session, owner, monkeypatch):
+    deleted, _ = await _run_check(db_session, owner, monkeypatch, quota_left=True)
+    assert deleted == [1]

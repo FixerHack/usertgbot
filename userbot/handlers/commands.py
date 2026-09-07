@@ -98,9 +98,9 @@ def register(client: TelegramClient, ctx: WorkerContext) -> None:
         if not gate:
             return
         if not await _feature_enabled(ctx, "check"):
-            await event.reply(t(ctx.owner_lang, "ub_feature_disabled"))
+            await clear_command(event)
             return
-        await _do_check(event, ctx, gate)
+        await _do_check(client, event, ctx, gate)
 
     @client.on(events.NewMessage(outgoing=True, pattern=SEND_RE))
     async def handle_send(event: events.NewMessage.Event) -> None:
@@ -211,19 +211,24 @@ async def _do_ban(client: TelegramClient, event: events.NewMessage.Event) -> Non
     await client.delete_dialog(await event.get_chat())
 
 
-async def _do_check(event: events.NewMessage.Event, ctx: WorkerContext, gate) -> None:
+async def _do_check(client: TelegramClient, event: events.NewMessage.Event, ctx: WorkerContext, gate) -> None:
     quota = get_plan(gate.tariff).check_quota
+    chat_id = event.chat_id
+    # Cleared before anything else. `.check` is typed in a chat with the person
+    # being looked up: leaving it there tells them they were checked, and the
+    # quota running out is no reason to make that exception.
+    await clear_command(event)
+
     async with get_session() as db:
         result = await consume_check(db, ctx.owner_user_id, quota)
         await db.commit()
     if not result.allowed:
-        await event.reply(t(ctx.owner_lang, "ub_check_limit", used=result.used, quota=quota))
+        await _notice(client, chat_id, t(ctx.owner_lang, "ub_check_limit", used=result.used, quota=quota))
         return
     # TODO(check): real lookup logic (spec pending). Quota accounting is live.
     note = t(ctx.owner_lang, "ub_check_note", used=result.used, quota=quota)
-    await event.delete()
     if not await notify_owner(ctx, note):
-        await event.respond(note)
+        await _notice(client, chat_id, note, delay=8.0)
 
 
 async def clear_command(event) -> None:
