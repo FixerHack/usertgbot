@@ -196,6 +196,9 @@ _TR: dict[str, tuple[str, str, str]] = {
         "• <code>.ban</code> — в особистих: заблокувати й видалити; у групі: вийти\n"
         "• <code>.check</code> — перевірка (ліміт залежить від тарифу)\n"
         "• <code>.send N текст</code> — надіслати N копій повідомлення\n"
+        "• <code>.mute</code> / <code>.unmute</code> — тиша для однієї людини в одному чаті <i>(Pro, Premium)</i>\n"
+        "• <code>.save</code> / <code>.unsave</code> — запис чату у текстовий файл <i>(Premium)</i>\n"
+        "• <code>.clone</code> / <code>.stopc</code> — повторювати за людиною її ж повідомлення <i>(Premium)</i>\n"
         "\n"
         "{autosave}\n"
         "\n"
@@ -204,8 +207,8 @@ _TR: dict[str, tuple[str, str, str]] = {
         "\n"
         "<b>Що дає який тариф</b>\n"
         "• <b>Standard</b> — .info, .me, .ban, .check (5/міс), автозбереження\n"
-        "• <b>Pro</b> — усе зі Standard + .check 10/міс + автовідповідач + .send (до 50 копій, раз на 10 хв)\n"
-        "• <b>Premium</b> — усе з Pro + .check 30/міс + .send (до 100 копій, раз на 2 хв)",
+        "• <b>Pro</b> — усе зі Standard + .check 10/міс + автовідповідач + .send (50 копій, раз на 5 хв) + .mute\n"
+        "• <b>Premium</b> — усе з Pro + .check 30/міс + .send (100 копій, раз на 2 хв) + .save + .clone",
         "❓ <b>Помощь — весь функционал</b>\n"
         "\n"
         "{bot}\n"
@@ -219,6 +222,9 @@ _TR: dict[str, tuple[str, str, str]] = {
         "• <code>.ban</code> — в личных: заблокировать и удалить; в группе: выйти\n"
         "• <code>.check</code> — проверка (лимит зависит от тарифа)\n"
         "• <code>.send N текст</code> — отправить N копий сообщения\n"
+        "• <code>.mute</code> / <code>.unmute</code> — тишина для одного человека в одном чате <i>(Pro, Premium)</i>\n"
+        "• <code>.save</code> / <code>.unsave</code> — запись чата в текстовый файл <i>(Premium)</i>\n"
+        "• <code>.clone</code> / <code>.stopc</code> — повторять за человеком его же сообщения <i>(Premium)</i>\n"
         "\n"
         "{autosave}\n"
         "\n"
@@ -227,8 +233,8 @@ _TR: dict[str, tuple[str, str, str]] = {
         "\n"
         "<b>Что даёт какой тариф</b>\n"
         "• <b>Standard</b> — .info, .me, .ban, .check (5/мес), автосохранение\n"
-        "• <b>Pro</b> — всё из Standard + .check 10/мес + автоответчик + .send (до 50 копий, раз в 10 мин)\n"
-        "• <b>Premium</b> — всё из Pro + .check 30/мес + .send (до 100 копий, раз в 2 мин)",
+        "• <b>Pro</b> — всё из Standard + .check 10/мес + автоответчик + .send (50 копий, раз в 5 мин) + .mute\n"
+        "• <b>Premium</b> — всё из Pro + .check 30/мес + .send (100 копий, раз в 2 мин) + .save + .clone",
         "❓ <b>Help — everything the service does</b>\n"
         "\n"
         "{bot}\n"
@@ -242,6 +248,12 @@ _TR: dict[str, tuple[str, str, str]] = {
         "• <code>.ban</code> — in DMs: block and delete; in a group: leave\n"
         "• <code>.check</code> — lookup (allowance depends on your plan)\n"
         "• <code>.send N text</code> — post N copies of a message\n"
+        "• <code>.mute</code> / <code>.unmute</code> — silence one person in one chat <i>(Pro, Premium)</i>\n"
+        "• <code>.save</code> / <code>.unsave</code> — record a chat to a text file <i>(Premium)</i>\n"
+        "• <code>.clone</code> / <code>.stopc</code> — repeat someone's messages back at them <i>(Premium)</i>\n"
+        "• <code>.mute</code> / <code>.unmute</code> — silence one person in one chat <i>(Pro, Premium)</i>\n"
+        "• <code>.save</code> / <code>.unsave</code> — record a chat to a text file <i>(Premium)</i>\n"
+        "• <code>.clone</code> / <code>.stopc</code> — repeat someone's messages back at them <i>(Premium)</i>\n"
         "\n"
         "{autosave}\n"
         "\n"
@@ -250,8 +262,8 @@ _TR: dict[str, tuple[str, str, str]] = {
         "\n"
         "<b>What each plan includes</b>\n"
         "• <b>Standard</b> — .info, .me, .ban, .check (5/mo), auto-save\n"
-        "• <b>Pro</b> — everything in Standard + .check 10/mo + autoresponder + .send (up to 50 copies, once per 10 min)\n"
-        "• <b>Premium</b> — everything in Pro + .check 30/mo + .send (up to 100 copies, once per 2 min)",
+        "• <b>Pro</b> — everything in Standard + .check 10/mo + autoresponder + .send (50 copies, once per 5 min) + .mute\n"
+        "• <b>Premium</b> — everything in Pro + .check 30/mo + .send (100 copies, once per 2 min) + .save + .clone",
     ),
     "help_standard": (
         "❓ <b>Довідка — ваш тариф: Standard</b>\n"
@@ -325,7 +337,8 @@ _TR: dict[str, tuple[str, str, str]] = {
         "• <code>.me</code> — надіслати свою візитку\n"
         "• <code>.ban</code> — в особистих: заблокувати й видалити; у групі: вийти\n"
         "• <code>.check</code> — <b>10 перевірок на місяць</b>, лічильник оновлюється 1-го числа\n"
-        "• <code>.send N текст</code> — <b>до 50 копій за раз, раз на 10 хвилин</b>. Якщо Telegram тимчасово обмежить надсилання, бот зупиниться і напише, скільки встиг.\n"
+        "• <code>.send N текст</code> — <b>до 50 копій за раз, раз на 5 хвилин, не більше 5 разів на годину</b>. Якщо Telegram тимчасово обмежить надсилання, бот зупиниться і напише, скільки встиг.\n"
+        "• <code>.mute</code> / <code>.mute 180</code> — тиша: повідомлення цієї людини в цьому чаті видалятимуться, доки не напишете <code>.unmute</code> (або поки не мине вказана кількість хвилин). У групі — відповіддю на її повідомлення.\n"
         "\n"
         "{autosave}\n"
         "\n"
@@ -343,7 +356,8 @@ _TR: dict[str, tuple[str, str, str]] = {
         "• <code>.me</code> — отправить свою визитку\n"
         "• <code>.ban</code> — в личных: заблокировать и удалить; в группе: выйти\n"
         "• <code>.check</code> — <b>10 проверок в месяц</b>, счётчик обновляется 1-го числа\n"
-        "• <code>.send N текст</code> — <b>до 50 копий за раз, раз в 10 минут</b>. Если Telegram временно ограничит отправку, бот остановится и напишет, сколько успел.\n"
+        "• <code>.send N текст</code> — <b>до 50 копий за раз, раз в 5 минут, не больше 5 раз в час</b>. Если Telegram временно ограничит отправку, бот остановится и напишет, сколько успел.\n"
+        "• <code>.mute</code> / <code>.mute 180</code> — тишина: сообщения этого человека в этом чате будут удаляться, пока не напишете <code>.unmute</code> (или пока не пройдёт указанное число минут). В группе — ответом на его сообщение.\n"
         "\n"
         "{autosave}\n"
         "\n"
@@ -361,7 +375,8 @@ _TR: dict[str, tuple[str, str, str]] = {
         "• <code>.me</code> — send your own card\n"
         "• <code>.ban</code> — in DMs: block and delete; in a group: leave\n"
         "• <code>.check</code> — <b>10 lookups per month</b>, resets on the 1st\n"
-        "• <code>.send N text</code> — <b>up to 50 copies at a time, once every 10 minutes</b>. If Telegram throttles sending, the bot stops and tells you how many went out.\n"
+        "• <code>.send N text</code> — <b>up to 50 copies at a time, once every 5 minutes, at most 5 times an hour</b>. If Telegram throttles sending, the bot stops and tells you how many went out.\n"
+        "• <code>.mute</code> / <code>.mute 180</code> — silence: this person's messages in this chat are deleted until you send <code>.unmute</code> (or the given number of minutes passes). In a group, reply to their message.\n"
         "\n"
         "{autosave}\n"
         "\n"
@@ -381,14 +396,17 @@ _TR: dict[str, tuple[str, str, str]] = {
         "• <code>.me</code> — надіслати свою візитку\n"
         "• <code>.ban</code> — в особистих: заблокувати й видалити; у групі: вийти\n"
         "• <code>.check</code> — <b>30 перевірок на місяць</b>, лічильник оновлюється 1-го числа\n"
-        "• <code>.send N текст</code> — <b>до 100 копій за раз, раз на 2 хвилини</b>. Якщо Telegram тимчасово обмежить надсилання, бот зупиниться і напише, скільки встиг.\n"
+        "• <code>.send N текст</code> — <b>до 100 копій за раз, раз на 2 хвилини, не більше 10 разів на годину</b>. Якщо Telegram тимчасово обмежить надсилання, бот зупиниться і напише, скільки встиг.\n"
+        "• <code>.mute</code> / <code>.mute 180</code> — тиша: повідомлення цієї людини в цьому чаті видалятимуться, доки не напишете <code>.unmute</code>. У групі — відповіддю на її повідомлення.\n"
+        "• <code>.save</code> / <code>.unsave</code> — запис чату. Усе сказане з моменту <code>.save</code> збирається у текстовий файл, який приходить вам у менеджер-бот після <code>.unsave</code>. У самому чаті нічого не з'являється.\n"
+        "• <code>.clone</code> / <code>.stopc</code> — повторювати за людиною її ж повідомлення, доки не зупините.\n"
         "\n"
         "{autosave}\n"
         "\n"
         "<b>Автовідповідач</b>\n"
         "Автоматична відповідь на вхідні, поки вас немає: текст, фото, кнопки-посилання, часове вікно й винятки — усе в ⚙️ Налаштування. Кожне спрацювання дублюється вам у менеджер-бот.\n"
         "\n"
-        "Premium — найповніший тариф: усе з Pro, але втричі більший ліміт <code>.check</code>, удвічі більша розсилка і вп'ятеро коротший інтервал між нею.",
+        "Premium — найповніший тариф: усе з Pro, втричі більший ліміт <code>.check</code>, удвічі більша розсилка — і дві команди, яких немає ніде більше: <code>.save</code> та <code>.clone</code>.",
         "❓ <b>Помощь — ваш тариф: Premium</b>\n"
         "\n"
         "{bot}\n"
@@ -401,14 +419,17 @@ _TR: dict[str, tuple[str, str, str]] = {
         "• <code>.me</code> — отправить свою визитку\n"
         "• <code>.ban</code> — в личных: заблокировать и удалить; в группе: выйти\n"
         "• <code>.check</code> — <b>30 проверок в месяц</b>, счётчик обновляется 1-го числа\n"
-        "• <code>.send N текст</code> — <b>до 100 копий за раз, раз в 2 минуты</b>. Если Telegram временно ограничит отправку, бот остановится и напишет, сколько успел.\n"
+        "• <code>.send N текст</code> — <b>до 100 копий за раз, раз в 2 минуты, не больше 10 раз в час</b>. Если Telegram временно ограничит отправку, бот остановится и напишет, сколько успел.\n"
+        "• <code>.mute</code> / <code>.mute 180</code> — тишина: сообщения этого человека в этом чате будут удаляться, пока не напишете <code>.unmute</code>. В группе — ответом на его сообщение.\n"
+        "• <code>.save</code> / <code>.unsave</code> — запись чата. Всё сказанное с момента <code>.save</code> собирается в текстовый файл, который приходит вам в менеджер-бот после <code>.unsave</code>. В самом чате ничего не появляется.\n"
+        "• <code>.clone</code> / <code>.stopc</code> — повторять за человеком его же сообщения, пока не остановите.\n"
         "\n"
         "{autosave}\n"
         "\n"
         "<b>Автоответчик</b>\n"
         "Автоматический ответ на входящие, пока вас нет: текст, фото, кнопки-ссылки, временное окно и исключения — всё в ⚙️ Настройки. Каждое срабатывание дублируется вам в менеджер-бот.\n"
         "\n"
-        "Premium — самый полный тариф: всё из Pro, но втрое больший лимит <code>.check</code>, вдвое большая рассылка и в пять раз более короткий интервал между ней.",
+        "Premium — самый полный тариф: всё из Pro, втрое больший лимит <code>.check</code>, вдвое большая рассылка — и две команды, которых нет больше нигде: <code>.save</code> и <code>.clone</code>.",
         "❓ <b>Help — your plan: Premium</b>\n"
         "\n"
         "{bot}\n"
@@ -421,14 +442,17 @@ _TR: dict[str, tuple[str, str, str]] = {
         "• <code>.me</code> — send your own card\n"
         "• <code>.ban</code> — in DMs: block and delete; in a group: leave\n"
         "• <code>.check</code> — <b>30 lookups per month</b>, resets on the 1st\n"
-        "• <code>.send N text</code> — <b>up to 100 copies at a time, once every 2 minutes</b>. If Telegram throttles sending, the bot stops and tells you how many went out.\n"
+        "• <code>.send N text</code> — <b>up to 100 copies at a time, once every 2 minutes, at most 10 times an hour</b>. If Telegram throttles sending, the bot stops and tells you how many went out.\n"
+        "• <code>.mute</code> / <code>.mute 180</code> — silence: this person's messages in this chat are deleted until you send <code>.unmute</code>. In a group, reply to their message.\n"
+        "• <code>.save</code> / <code>.unsave</code> — record the chat. Everything said from <code>.save</code> onwards is collected into a text file, delivered to you in the manager bot after <code>.unsave</code>. Nothing appears in the chat itself.\n"
+        "• <code>.clone</code> / <code>.stopc</code> — repeat someone's messages back at them until you stop.\n"
         "\n"
         "{autosave}\n"
         "\n"
         "<b>Autoresponder</b>\n"
         "Replies to incoming messages while you're away: text, photo, link buttons, a time window and exceptions — all in ⚙️ Settings. Every reply is also copied to your manager bot.\n"
         "\n"
-        "Premium is the fullest plan: everything in Pro, with three times the <code>.check</code> allowance, twice the bulk-send size and a five times shorter gap between sends.",
+        "Premium is the fullest plan: everything in Pro, three times the <code>.check</code> allowance, twice the bulk-send size — and two commands that exist nowhere else: <code>.save</code> and <code>.clone</code>.",
     ),
     "help_btn_all": (
         "📖 Показати весь функціонал",
@@ -1177,13 +1201,13 @@ _FEATURES: dict[str, tuple[list[str], list[str], list[str]]] = {
          ".check — 5/month", "Auto-save of deleted/edited messages"],
     ),
     "pro": (
-        ["Усе зі Standard", ".check — 10/місяць", "Автовідповідач (налаштовується)", ".send — масове надсилання (до 50 повідомлень, раз на 10 хв)"],
-        ["Всё из Standard", ".check — 10/месяц", "Автоответчик (настраивается)", ".send — массовая рассылка (до 50 сообщений, раз в 10 мин)"],
-        ["Everything in Standard", ".check — 10/month", "Autoresponder (configurable)", ".send — bulk send (up to 50 messages, once per 10 min)"],
+        ["Усе зі Standard", ".check — 10/місяць", "Автовідповідач (налаштовується)", ".send — до 50 копій, раз на 5 хв (5 разів на годину)", ".mute — заглушити набридливого"],
+        ["Всё из Standard", ".check — 10/месяц", "Автоответчик (настраивается)", ".send — до 50 копий, раз в 5 мин (5 раз в час)", ".mute — заглушить надоедливого"],
+        ["Everything in Standard", ".check — 10/month", "Autoresponder (configurable)", ".send — up to 50 copies, once per 5 min (5 per hour)", ".mute — silence someone"],
     ),
     "premium": (
-        ["Усе з Pro", ".check — 30/місяць", ".send — до 100 повідомлень, раз на 2 хв", "Автовідповідач (налаштовується)"],
-        ["Всё из Pro", ".check — 30/месяц", ".send — до 100 сообщений, раз в 2 мин", "Автоответчик (настраивается)"],
-        ["Everything in Pro", ".check — 30/month", ".send — up to 100 messages, once per 2 min", "Autoresponder (configurable)"],
+        ["Усе з Pro", ".check — 30/місяць", ".send — до 100 копій, раз на 2 хв (10 разів на годину)", "Автовідповідач (налаштовується)", ".mute — заглушити набридливого", ".save — запис чату у файл", ".clone — клонування повідомлень"],
+        ["Всё из Pro", ".check — 30/месяц", ".send — до 100 копий, раз в 2 мин (10 раз в час)", "Автоответчик (настраивается)", ".mute — заглушить надоедливого", ".save — запись чата в файл", ".clone — клонирование сообщений"],
+        ["Everything in Pro", ".check — 30/month", ".send — up to 100 copies, once per 2 min (10 per hour)", "Autoresponder (configurable)", ".mute — silence someone", ".save — record a chat to a file", ".clone — mirror someone's messages"],
     ),
 }

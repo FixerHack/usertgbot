@@ -87,12 +87,21 @@ def test_the_settings_menu_gives_long_labels_their_own_row():
     assert all(len(row) == 1 for row in rows[1:]), "one per row below the first"
 
 
+def _button(markup, data: str):
+    return next(b for row in markup.inline_keyboard for b in row if b.callback_data == data)
+
+
 def test_the_account_button_follows_whether_one_is_connected():
     from management_bot.handlers.settings import _main_menu
     from shared.i18n import t
 
-    connected = _main_menu(True, "uk").inline_keyboard[-1][0]
-    assert connected.text == t("uk", "set_btn_unlink")
+    assert _button(_main_menu(True, "uk"), "set:unlink").text == t("uk", "set_btn_unlink")
+    assert _button(_main_menu(False, "uk"), "set:link").text == t("uk", "set_btn_link")
 
-    empty = _main_menu(False, "uk").inline_keyboard[-1][0]
-    assert empty.text == t("uk", "set_btn_link")
+
+def test_settings_has_a_way_back_to_the_menu():
+    """Every submenu could get back to settings; settings itself could only be
+    left through the reply keyboard under the input box."""
+    from management_bot.handlers.settings import _main_menu
+
+    assert _button(_main_menu(True, "uk"), "set:menu") is not None

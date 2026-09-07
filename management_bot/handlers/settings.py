@@ -63,6 +63,9 @@ def _main_menu(has_account: bool, lang: str, *, auto_renew: bool = False) -> Inl
         [InlineKeyboardButton(text=t(lang, "set_btn_ar"), callback_data="set:ar")],
         [InlineKeyboardButton(text=t(lang, "set_btn_ignored"), callback_data="set:ignored")],
         [account_btn],
+        # Every submenu has a way back to settings; settings itself had none,
+        # so the only way out was the reply keyboard below the input box.
+        [InlineKeyboardButton(text=t(lang, "btn_menu"), callback_data="set:menu")],
     ]
     if auto_renew:
         # Only shown while there is something to cancel — a standing card
@@ -334,6 +337,22 @@ async def _load_features(session, telegram_id: int) -> tuple[int | None, Feature
 async def _current_tariff(db, telegram_id: int) -> str | None:
     sub = await queries.get_active_subscription_by_telegram_id(db, telegram_id)
     return sub.tariff if sub is not None else None
+
+
+@router.callback_query(F.data == "set:menu")
+async def on_menu(callback: CallbackQuery, state: FSMContext) -> None:
+    """Back to the dashboard. The settings screen is replaced rather than
+    added to — leaving it behind would put two live keyboards in the chat,
+    and the stale one keeps answering."""
+    from management_bot.handlers.start import show_dashboard
+
+    await state.clear()
+    await show_dashboard(callback.message)
+    try:
+        await callback.message.delete()
+    except Exception:
+        logger.debug("could not clear the settings screen", exc_info=True)
+    await callback.answer()
 
 
 @router.callback_query(F.data == "set:features")
