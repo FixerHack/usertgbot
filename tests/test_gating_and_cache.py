@@ -1,9 +1,11 @@
 """Userbot command gating (DB) + recent-message cache (SQLite-backed)."""
 
 import asyncio
+import sqlite3
 from datetime import datetime, timedelta, timezone
 
 import aiosqlite
+import pytest
 
 from db.models import Subscription, SubscriptionStatus
 from management_bot.storage import upsert_user
@@ -205,4 +207,117 @@ async def test_cache_scoped_per_owner():
         await owner1.close()
         await owner2.close()
     finally:
+        os.remove(path)
+
+
+# --- opening the cache while a sibling worker holds the same file ----------
+
+
+class _RefusesTheSwitch:
+    """A connection that answers reads but refuses to change journal mode,
+    which is what a busy sibling worker holding this file looks like."""
+
+    def __init__(self, conn):
+        self._conn = conn
+
+    def execute(self, sql, *args, **kwargs):
+        if "journal_mode=" in sql.replace(" ", ""):
+            raise sqlite3.OperationalError("database is locked")
+        return self._conn.execute(sql, *args, **kwargs)
+
+
+async def test_a_refused_wal_switch_is_survivable():
+    """The production failure, at the line it actually happened on.
+
+    Journal mode belongs to the file and needs an exclusive lock to change. One
+    process runs a worker per connected account, all on this one file, so a busy
+    sibling means the lock never comes — and this ran during setup, so the whole
+    connection went with it.
+    """
+    import os
+    import tempfile
+
+    import aiosqlite
+
+    from userbot import message_cache as mc
+
+    fd, path = tempfile.mkstemp(suffix=".sqlite3")
+    os.close(fd)
+    conn = await aiosqlite.connect(path)
+    try:
+        await mc._ensure_wal(_RefusesTheSwitch(conn))  # must not raise
+    finally:
+        await conn.close()
+        os.remove(path)
+
+
+async def test_a_file_already_in_wal_is_left_alone():
+    """Nothing is gained by asking for the mode the file is already in, and the
+    asking is what goes for the lock."""
+    import os
+    import tempfile
+
+    import aiosqlite
+
+    from userbot import message_cache as mc
+
+    fd, path = tempfile.mkstemp(suffix=".sqlite3")
+    os.close(fd)
+    try:
+        first = RecentMessageCache(owner_user_id=1, db_path=path)
+        await first.remember(chat_id=10, message_id=1, sender_id=5, text="first")
+        await first.close()
+
+        statements: list[str] = []
+        conn = await aiosqlite.connect(path)
+        real_execute = conn.execute
+
+        def spy(sql, *args, **kwargs):
+            statements.append(sql)
+            return real_execute(sql, *args, **kwargs)
+
+        conn.execute = spy
+        await mc._ensure_wal(conn)
+        await conn.close()
+
+        assert not any("journal_mode=" in s.replace(" ", "") for s in statements), statements
+    finally:
+        os.remove(path)
+
+
+async def test_a_failed_setup_does_not_leak_the_connection():
+    """Every failure used to leave an open handle behind, one per message."""
+    import os
+    import tempfile
+
+    import aiosqlite
+
+    from userbot import message_cache as mc
+
+    fd, path = tempfile.mkstemp(suffix=".sqlite3")
+    os.close(fd)
+    opened = []
+    real_connect = aiosqlite.connect
+    original = mc._ensure_wal
+
+    async def spy_connect(*args, **kwargs):
+        conn = await real_connect(*args, **kwargs)
+        opened.append(conn)
+        return conn
+
+    async def refuse(conn):
+        raise sqlite3.OperationalError("database is locked")
+
+    try:
+        mc.aiosqlite.connect = spy_connect
+        mc._ensure_wal = refuse
+        cache = RecentMessageCache(owner_user_id=1, db_path=path)
+        with pytest.raises(sqlite3.OperationalError):
+            await cache.remember(chat_id=10, message_id=1, sender_id=5, text="lost")
+
+        assert opened, "the test never got as far as opening a connection"
+        assert all(not c._running for c in opened), "a failed setup left a handle open"
+    finally:
+        mc.aiosqlite.connect = real_connect
+        mc._ensure_wal = original
         os.remove(path)
