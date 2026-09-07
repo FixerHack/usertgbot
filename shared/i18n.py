@@ -990,6 +990,11 @@ _TR: dict[str, tuple[str, str, str]] = {
         "📁 Запись остановлена. Ничего не записалось — в чате не было сообщений.",
         "📁 Recording stopped. Nothing was captured — there were no messages.",
     ),
+    "rec_needs_tariff": (
+        "Запис чатів доступний на тарифі Premium.",
+        "Запись чатов доступна на тарифе Premium.",
+        "Chat recording is part of the Premium plan.",
+    ),
     "rec_needs_account": (
         "Спершу підключіть акаунт — записувати нічого.",
         "Сначала подключите аккаунт — записывать нечего.",

@@ -297,3 +297,96 @@ def test_cancel_is_matched_in_every_language():
 
 async def _async_none():
     return None
+
+
+# --- the tariff gate -------------------------------------------------------
+
+
+@pytest.fixture
+async def standard_owner(db_session):
+    """A paying account whose plan does NOT include recording."""
+    user = await storage.upsert_user(db_session, 992002, username="standard")
+    db_session.add(
+        Subscription(
+            user_id=user.id, tariff="standard", status=SubscriptionStatus.ACTIVE,
+            payment_provider="stub",
+            expires_at=datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=30),
+        )
+    )
+    await db_session.commit()
+    return user
+
+
+def _callback(chat_id: int, answered: list, edited: list):
+    return SimpleNamespace(
+        data="set:rec",
+        from_user=SimpleNamespace(language_code="uk", id=chat_id),
+        message=SimpleNamespace(
+            chat=SimpleNamespace(id=chat_id),
+            edit_text=lambda text, **kw: edited.append(text) or _async_none(),
+            answer=lambda text, **kw: edited.append(text) or _async_none(),
+        ),
+        answer=lambda text=None, **kw: answered.append(text) or _async_none(),
+    )
+
+
+async def test_the_screen_is_closed_to_a_plan_without_recording(db_session, standard_owner, monkeypatch):
+    """Hiding the button is not authorization: the callback can be repeated,
+    and the screen is one message away from starting a recording."""
+    _patch(monkeypatch, db_session)
+    answered, edited = [], []
+
+    await settings_handlers.on_recordings(_callback(992002, answered, edited))
+
+    assert not edited, "a plan without recording was shown the screen anyway"
+    assert answered and t("uk", "rec_needs_tariff") in answered[0]
+
+
+async def test_the_picker_is_closed_to_a_plan_without_recording(db_session, standard_owner, monkeypatch):
+    _patch(monkeypatch, db_session)
+    answered, edited = [], []
+
+    await settings_handlers.on_recordings_pick(_callback(992002, answered, edited), _FakeState())
+
+    assert not edited, "the picker keyboard was offered without the tariff for it"
+    assert answered and t("uk", "rec_needs_tariff") in answered[0]
+
+
+async def test_a_shared_contact_without_the_tariff_starts_nothing(db_session, standard_owner, monkeypatch):
+    """The reply keyboard outlives the subscription that earned it, so this
+    arrives with no scripting at all — and the worker records any active row it
+    finds, without asking about the tariff again.
+    """
+    from db import queries
+
+    _patch(monkeypatch, db_session)
+    answered: list[str] = []
+    message = SimpleNamespace(
+        chat=SimpleNamespace(id=992002),
+        message_id=7,
+        bot=SimpleNamespace(delete_message=lambda *a, **k: _async_none()),
+        from_user=SimpleNamespace(language_code="uk", id=992002),
+        users_shared=SimpleNamespace(
+            request_id=settings_handlers._RECORD_REQUEST_ID,
+            user_ids=[6115569877],
+            users=[SimpleNamespace(username="someone", first_name=None, last_name=None)],
+        ),
+        answer=lambda text, **kw: answered.append(text) or _async_none(),
+    )
+
+    await settings_handlers.on_user_picked(message, _FakeState())
+
+    assert await queries.get_active_recordings(db_session, standard_owner.id) == []
+    assert answered and t("uk", "rec_needs_tariff") in answered[-1]
+
+
+class _FakeState:
+    def __init__(self):
+        self._data = {}
+
+    async def get_data(self):
+        return dict(self._data)
+
+    async def update_data(self, **kwargs):
+        self._data.update(kwargs)
+        return dict(self._data)

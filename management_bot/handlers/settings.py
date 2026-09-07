@@ -146,6 +146,20 @@ async def _has_active_sub(telegram_id: int) -> bool:
         return await queries.get_active_subscription_by_telegram_id(db, telegram_id) is not None
 
 
+async def _may_record(telegram_id: int) -> bool:
+    """Whether this account's plan includes chat recording, asked at the moment
+    it is used rather than at the moment the button was drawn.
+
+    The two are not the same. The picker's reply keyboard stays in the chat
+    after a subscription lapses, and the screen itself is one callback anyone
+    can repeat; the worker then records any active row it finds, without
+    consulting the tariff again. So the check belongs here, on every entrance.
+    """
+    async with get_session() as db:
+        active = await queries.get_active_subscription_by_telegram_id(db, telegram_id)
+    return bool(active and tariff_grants_command(active.tariff, "save"))
+
+
 def _me_menu(lang: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
@@ -740,6 +754,9 @@ async def _recordings_screen(db, telegram_id: int, lang: str):
 @router.callback_query(F.data == "set:rec")
 async def on_recordings(callback: CallbackQuery) -> None:
     lang = lang_of(callback)
+    if not await _may_record(callback.message.chat.id):
+        await callback.answer(t(lang, "rec_needs_tariff"), show_alert=True)
+        return
     async with get_session() as db:
         text, kb = await _recordings_screen(db, callback.message.chat.id, lang)
     await callback.message.edit_text(text, reply_markup=kb)
@@ -752,6 +769,9 @@ async def on_recordings_pick(callback: CallbackQuery, state: FSMContext) -> None
     has; this asks them and hands back the id, which for a private chat is the
     chat id too."""
     lang = lang_of(callback)
+    if not await _may_record(callback.message.chat.id):
+        await callback.answer(t(lang, "rec_needs_tariff"), show_alert=True)
+        return
     keyboard = ReplyKeyboardMarkup(
         keyboard=[
             [
@@ -816,6 +836,11 @@ async def on_user_picked(message: Message, state: FSMContext) -> None:
 
     chat_id = shared.user_ids[0]
     title = _shared_name(shared) or str(chat_id)
+
+    if not await _may_record(message.chat.id):
+        # The keyboard that sent this outlives the subscription that earned it.
+        await message.answer(t(lang, "rec_needs_tariff"), reply_markup=keyboards.main_menu(lang))
+        return
 
     async with get_session() as db:
         user = await queries.get_user_by_telegram_id(db, message.chat.id)
