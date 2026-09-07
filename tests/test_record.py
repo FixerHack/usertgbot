@@ -90,6 +90,12 @@ async def _plain(client, entity_id):
     return "Some chat"
 
 
+async def _plain_ref(client, entity_id, lang="uk"):
+    # The transcript is plain text, so the code under test asks for a name
+    # without markup — see tests/test_plain_references.py.
+    return "@someone"
+
+
 def _setup(monkeypatch, db_session):
     from userbot.handlers import commands
 
@@ -103,6 +109,7 @@ def _setup(monkeypatch, db_session):
     monkeypatch.setattr(notify.asyncio, "sleep", _noop)
     monkeypatch.setattr(record.entities, "ref", _ref, raising=False)
     monkeypatch.setattr(record.entities, "plain_name", _plain, raising=False)
+    monkeypatch.setattr(record.entities, "plain_ref", _plain_ref, raising=False)
 
 
 def _command_event(chat_id: int = 555):

@@ -131,7 +131,7 @@ def register(client: TelegramClient, ctx: WorkerContext) -> None:
             await db.commit()
         ctx.muted[(event.chat_id, target)] = until
 
-        who = await entities.ref(client, target, ctx.owner_lang)
+        who = await entities.plain_ref(client, target, ctx.owner_lang)
         text = (
             t(ctx.owner_lang, "ub_muted_for", user=who, duration=_humanize(minutes, ctx.owner_lang))
             if until is not None
@@ -167,7 +167,7 @@ def register(client: TelegramClient, ctx: WorkerContext) -> None:
             await clear_command(event)
             await _notice(client, event.chat_id, t(ctx.owner_lang, "ub_not_muted"))
             return
-        who = await entities.ref(client, target, ctx.owner_lang)
+        who = await entities.plain_ref(client, target, ctx.owner_lang)
         await event.respond(t(ctx.owner_lang, "ub_unmuted", user=who))
         await clear_command(event)
 

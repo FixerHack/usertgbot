@@ -140,14 +140,18 @@ def register(client: TelegramClient, ctx: WorkerContext) -> None:
             rows = await get_recorded_messages(db, recording_id)
             await db.commit()
 
-        title = await entities.ref(client, event.chat_id, ctx.owner_lang)
+        # Two forms of the same name, because they go to two different places:
+        # the file is plain text, and the bot message is HTML (where a name
+        # carrying "<" or "&" has to arrive escaped or the send fails).
+        title = await entities.plain_ref(client, event.chat_id, ctx.owner_lang)
+        title_html = await entities.ref(client, event.chat_id, ctx.owner_lang)
         archive = build_archive(title, rows, ctx.owner_lang)
         # Delivered through the manager bot, not into the chat being recorded:
         # dropping a transcript of a conversation into that same conversation
         # is the last thing anyone wants.
         delivered = await notify_owner(
             ctx,
-            t(ctx.owner_lang, "rec_ready", chat=title, count=len(rows)),
+            t(ctx.owner_lang, "rec_ready", chat=title_html, count=len(rows)),
             document=archive.encode("utf-8"),
             document_filename=f"chat-{event.chat_id}.txt",
         )
@@ -178,7 +182,7 @@ def register(client: TelegramClient, ctx: WorkerContext) -> None:
                     return
 
                 sender = (
-                    await entities.ref(client, event.sender_id, ctx.owner_lang) if event.sender_id else "—"
+                    await entities.plain_ref(client, event.sender_id, ctx.owner_lang) if event.sender_id else "—"
                 )
                 await add_recorded_message(
                     db,

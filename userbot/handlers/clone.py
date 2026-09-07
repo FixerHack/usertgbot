@@ -79,7 +79,7 @@ def register(client: TelegramClient, ctx: WorkerContext) -> None:
             await db.commit()
         ctx.cloned.add((event.chat_id, target))
 
-        who = await entities.ref(client, target, ctx.owner_lang)
+        who = await entities.plain_ref(client, target, ctx.owner_lang)
         await event.respond(t(ctx.owner_lang, "ub_clone_started", user=who))
 
     @client.on(events.NewMessage(outgoing=True, pattern=STOPC_RE))
@@ -108,7 +108,7 @@ def register(client: TelegramClient, ctx: WorkerContext) -> None:
         if not removed:
             await _notice(client, event.chat_id, t(ctx.owner_lang, "ub_clone_not_running"))
             return
-        who = await entities.ref(client, target, ctx.owner_lang)
+        who = await entities.plain_ref(client, target, ctx.owner_lang)
         await event.respond(t(ctx.owner_lang, "ub_clone_stopped", user=who))
 
     @client.on(events.NewMessage(incoming=True))
