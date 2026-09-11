@@ -1,0 +1,444 @@
+"""What actually reaches the owner when media is captured.
+
+Both bugs here were the same shape: the file arrived and the "who sent this,
+in which chat" line did not. A recovered sticker with no attribution is barely
+better than no sticker at all — the whole point is knowing who deleted what.
+"""
+
+from __future__ import annotations
+
+import contextlib
+from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
+
+import pytest
+
+from db.models import Subscription, SubscriptionStatus
+from management_bot import storage
+from userbot import formatting
+from userbot.context import WorkerContext
+
+
+class _Notifier:
+    """Records what the manager bot was asked to send, in order, and hands
+    back a message id the way the real notifier does — one notice has to be
+    able to refer to another."""
+
+    def __init__(self):
+        self.sent: list[dict] = []
+
+    def _record(self, entry: dict):
+        self.sent.append(entry)
+        return SimpleNamespace(message_id=1000 + len(self.sent))
+
+    async def send_text(self, chat_id, text, **kw):
+        return self._record({"as": "text", "text": text, **kw})
+
+    async def send_photo(self, chat_id, photo, *, caption="", **kw):
+        return self._record({"as": "photo", "caption": caption, "bytes": photo, **kw})
+
+    async def send_voice(self, chat_id, voice, *, caption="", **kw):
+        return self._record({"as": "voice", "caption": caption, "bytes": voice, **kw})
+
+    async def send_video(self, chat_id, video, *, caption="", **kw):
+        return self._record({"as": "video", "caption": caption, "bytes": video, **kw})
+
+    async def send_document(self, chat_id, document, *, filename="file", caption="", **kw):
+        return self._record({"as": "document", "caption": caption, "bytes": document, "filename": filename, **kw})
+
+    async def send_location(self, chat_id, lat, lon, *, caption="", **kw):
+        return self._record({"as": "location", "caption": caption, **kw})
+
+
+@pytest.fixture
+async def owner(db_session):
+    """A subscribed owner, since every capture path is gated on that."""
+    user = await storage.upsert_user(db_session, 777001, username="owner")
+    db_session.add(
+        Subscription(
+            user_id=user.id,
+            tariff="pro",
+            status=SubscriptionStatus.ACTIVE,
+            payment_provider="stub",
+            expires_at=datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=30),
+        )
+    )
+    await db_session.commit()
+    return user
+
+
+def _ctx(user_id: int, notifier) -> WorkerContext:
+    return WorkerContext(
+        session_id=1, owner_user_id=user_id, owner_telegram_id=777001,
+        owner_lang="uk", notifier=notifier,
+    )
+
+
+def _patch_lookups(monkeypatch, module, db_session):
+    """Names and chat titles come from Telegram; the DB session comes from the
+    fixture. Neither is what these tests are about."""
+
+    @contextlib.asynccontextmanager
+    async def fake_session():
+        yield db_session
+
+    monkeypatch.setattr(module, "get_session", fake_session)
+    monkeypatch.setattr(module.entities, "resolve", _fake_resolve, raising=False)
+    monkeypatch.setattr(module.entities, "ref", _fake_ref, raising=False)
+    if hasattr(module.entities, "plain_name"):
+        monkeypatch.setattr(module.entities, "plain_name", _fake_plain, raising=False)
+
+
+async def _fake_resolve(client, entity_id, lang):
+    return "@sender", False
+
+
+async def _fake_ref(client, entity_id, lang):
+    return "@somechat"
+
+
+async def _fake_plain(client, entity_id):
+    return "Some chat"
+
+
+# --- deleted stickers ------------------------------------------------------
+
+
+async def test_a_deleted_sticker_still_says_who_sent_it(db_session, owner, monkeypatch):
+    """Telegram turns a .webp/.tgs/.webm document back into a sticker, and a
+    sticker cannot carry a caption — so the attribution line was silently
+    dropped and the owner got a bare image."""
+    from userbot.handlers import autosave
+
+    _patch_lookups(monkeypatch, autosave, db_session)
+    notifier = _Notifier()
+
+    await autosave._handle(
+        client=None, ctx=_ctx(owner.id, notifier), chat_id=-100, message_id=5, sender_id=42,
+        event_type="deleted", text="", previous_text=None,
+        media=b"webp-bytes", media_kind="sticker", media_filename="pack.webp",
+    )
+
+    kinds = [m["as"] for m in notifier.sent]
+    # File first, notice second — the order captioned media already reads in.
+    assert kinds == ["document", "text"]
+    assert notifier.sent[0]["bytes"] == b"webp-bytes"
+
+    notice = notifier.sent[1]["text"]
+    assert "@sender" in notice and "@somechat" in notice
+
+    markup = notifier.sent[1]["reply_markup"]
+    assert markup is not None, "the buttons ride with the notice"
+    # The delete button must name the sticker, or tapping it tidies the words
+    # and leaves the picture behind.
+    data = [b.callback_data for row in markup.inline_keyboard for b in row]
+    assert "notice:del:1001" in data
+
+
+async def test_a_deleted_sticker_with_no_text_is_called_a_sticker(db_session, owner, monkeypatch):
+    """It used to fall through to the generic "медіа"."""
+    from userbot.handlers import autosave
+
+    _patch_lookups(monkeypatch, autosave, db_session)
+    notifier = _Notifier()
+
+    await autosave._handle(
+        client=None, ctx=_ctx(owner.id, notifier), chat_id=-100, message_id=6, sender_id=42,
+        event_type="deleted", text="", previous_text=None,
+        media=b"x", media_kind="sticker",
+    )
+
+    assert formatting.kind_label("sticker", "uk") in notifier.sent[1]["text"]
+
+
+async def test_captioned_media_still_arrives_as_one_message(db_session, owner, monkeypatch):
+    """The two-message split is for stickers only — everything else keeps its
+    caption and its button on the file itself."""
+    from userbot.handlers import autosave
+
+    _patch_lookups(monkeypatch, autosave, db_session)
+    notifier = _Notifier()
+
+    await autosave._handle(
+        client=None, ctx=_ctx(owner.id, notifier), chat_id=-100, message_id=7, sender_id=42,
+        event_type="deleted", text="", previous_text=None,
+        media=b"jpeg", media_kind="photo",
+    )
+
+    assert [m["as"] for m in notifier.sent] == ["photo"]
+    assert "@sender" in notifier.sent[0]["caption"]
+
+
+# --- one-time videos -------------------------------------------------------
+
+
+async def test_a_one_time_video_arrives_with_the_video(db_session, owner, monkeypatch):
+    """The bytes were downloaded and then thrown away: the owner got a bare
+    "Одноразове відео — Від: @x" header and nothing to watch."""
+    from userbot.handlers import viewonce
+
+    monkeypatch.setattr(viewonce.entities, "ref", _fake_ref, raising=False)
+    notifier = _Notifier()
+
+    class _Client:
+        async def download_media(self, message, file=None):
+            return b"mp4-bytes"
+
+    class _Msg:
+        pass
+
+    class _Event:
+        message = _Msg()
+        sender_id = 42
+
+    await viewonce._forward(_Client(), _Event(), _ctx(owner.id, notifier), "video")
+
+    assert [m["as"] for m in notifier.sent] == ["video"]
+    assert notifier.sent[0]["bytes"] == b"mp4-bytes"
+    assert "@sender" in notifier.sent[0]["caption"] or "@somechat" in notifier.sent[0]["caption"]
+
+
+async def test_a_one_time_video_we_could_not_download_still_warns(db_session, owner, monkeypatch):
+    """Losing the file is bad; losing the fact that it existed is worse."""
+    from userbot.handlers import viewonce
+
+    monkeypatch.setattr(viewonce.entities, "ref", _fake_ref, raising=False)
+    notifier = _Notifier()
+
+    class _Client:
+        async def download_media(self, message, file=None):
+            return None
+
+    class _Event:
+        message = object()
+        sender_id = 42
+
+    await viewonce._forward(_Client(), _Event(), _ctx(owner.id, notifier), "video")
+
+    assert [m["as"] for m in notifier.sent] == ["text"]
+
+
+# --- the switches ----------------------------------------------------------
+
+
+class _RecordingClient:
+    """Telethon registers handlers through a decorator; this keeps them so a
+    test can call one directly instead of standing up a real client."""
+
+    def __init__(self):
+        self.handlers: dict[str, object] = {}
+
+    def on(self, _event):
+        def decorator(func):
+            self.handlers[func.__name__] = func
+            return func
+
+        return decorator
+
+
+def _view_once_event(*, video: bool = False):
+    # SimpleNamespace rather than nested classes: a class body cannot see the
+    # enclosing function's locals, so `video` would be a NameError there.
+    message = SimpleNamespace(
+        media=SimpleNamespace(ttl_seconds=60),
+        photo=None,
+        voice=None,
+        video_note=object() if video else None,
+        video=None,
+    )
+    return SimpleNamespace(message=message, sender_id=42)
+
+
+async def _set_features(db_session, user_id: int, **flags):
+    from db import queries
+    from shared.settings_schema import Features
+
+    features = Features()
+    for name, value in flags.items():
+        setattr(features, name, value)
+    await queries.set_features(db_session, user_id, features.to_dict())
+    await db_session.commit()
+
+
+async def test_one_time_videos_can_be_switched_off(db_session, owner, monkeypatch):
+    """They used to run unconditionally: photos and voice had a switch, video
+    did not, so there was no way to stop them.
+
+    The client here CAN download — otherwise removing the switch would still
+    send nothing (the fake would just fail further along) and this test would
+    pass for the wrong reason.
+    """
+    from userbot.handlers import viewonce
+
+    _patch_lookups(monkeypatch, viewonce, db_session)
+    await _set_features(db_session, owner.id, viewonce_video=False)
+
+    notifier = _Notifier()
+    client = _RecordingClient()
+
+    async def _download(message, file=None):
+        return b"mp4"
+
+    client.download_media = _download
+    viewonce.register(client, _ctx(owner.id, notifier))
+
+    await client.handlers["capture"](_view_once_event(video=True))
+    assert notifier.sent == []
+
+
+async def test_one_time_videos_are_captured_while_the_switch_is_on(db_session, owner, monkeypatch):
+    from userbot.handlers import viewonce
+
+    _patch_lookups(monkeypatch, viewonce, db_session)
+    await _set_features(db_session, owner.id, viewonce_video=True)
+
+    notifier = _Notifier()
+    client = _RecordingClient()
+    ctx = _ctx(owner.id, notifier)
+
+    async def _download(message, file=None):
+        return b"mp4"
+
+    client.download_media = _download
+    viewonce.register(client, ctx)
+
+    await client.handlers["capture"](_view_once_event(video=True))
+    assert [m["as"] for m in notifier.sent] == ["video"]
+
+
+def _send_event(count: str = "999"):
+    """A .send whose count is out of range: the first thing the command does
+    past the gate is post a "too many" notice, which makes "did it get past
+    the gate" observable without actually sending anything."""
+    match = SimpleNamespace(group=lambda n: count if n == 1 else "text")
+    deleted: list[int] = []
+
+    async def delete():
+        deleted.append(1)
+
+    event = SimpleNamespace(pattern_match=match, chat_id=-100, reply=_noop_reply, delete=delete)
+    event.deleted = deleted
+    return event
+
+
+async def _noop_reply(text, **kw):
+    return None
+
+
+async def _run_send(db_session, owner, monkeypatch, *, enabled: bool) -> list[str]:
+    from userbot.handlers import commands
+
+    @contextlib.asynccontextmanager
+    async def fake_session():
+        yield db_session
+
+    monkeypatch.setattr(commands, "get_session", fake_session)
+    monkeypatch.setattr(commands.asyncio, "sleep", _noop_sleep)
+    await _set_features(db_session, owner.id, send=enabled)
+
+    posted: list[str] = []
+
+    client = _RecordingClient()
+
+    async def _send_message(chat_id, text):
+        posted.append(text)
+        return SimpleNamespace(delete=_noop_delete)
+
+    client.send_message = _send_message
+    commands.register(client, _ctx(owner.id, _Notifier()))
+    event = _send_event()
+    await client.handlers["handle_send"](event)
+    _run_send.last_event = event
+    return posted
+
+
+async def _noop_sleep(_seconds):
+    return None
+
+
+async def _noop_delete():
+    return None
+
+
+async def test_send_can_be_switched_off(db_session, owner, monkeypatch):
+    """The tariff decides whether .send exists at all; this decides whether
+    the owner wants it. Before, only the first check existed."""
+    assert await _run_send(db_session, owner, monkeypatch, enabled=False) == []
+    assert _run_send.last_event.deleted == [1], "and the command does not linger either"
+
+
+async def test_send_still_runs_while_the_switch_is_on(db_session, owner, monkeypatch):
+    """Without this the test above would pass even with the switch removed."""
+    assert await _run_send(db_session, owner, monkeypatch, enabled=True) != []
+
+
+async def test_a_send_stopped_by_a_limit_still_clears_its_command(db_session, owner, monkeypatch):
+    """The limit notice removes itself after a couple of seconds; the command
+    used to stay, leaving ".send 10 ..." sitting in a client's chat because a
+    limit stopped it."""
+    await _run_send(db_session, owner, monkeypatch, enabled=True)
+    assert _run_send.last_event.deleted == [1]
+
+
+# --- .check leaves nothing behind ------------------------------------------
+
+
+async def _run_check(db_session, owner, monkeypatch, *, quota_left: bool):
+    from db import queries
+    from userbot.handlers import commands
+
+    @contextlib.asynccontextmanager
+    async def fake_session():
+        yield db_session
+
+    monkeypatch.setattr(commands, "get_session", fake_session)
+    monkeypatch.setattr(commands.asyncio, "sleep", _noop_sleep)
+
+    if not quota_left:
+        # Burn the month's allowance so the limit path is the one taken.
+        for _ in range(10):
+            await queries.consume_check(db_session, owner.id, 10)
+        await db_session.commit()
+
+    posted: list[str] = []
+    deleted: list[int] = []
+
+    class _Client:
+        def __init__(self):
+            self.handlers = {}
+
+        def on(self, _e):
+            def d(f):
+                self.handlers[f.__name__] = f
+                return f
+
+            return d
+
+        async def send_message(self, chat_id, text):
+            posted.append(text)
+            return SimpleNamespace(delete=_noop_delete)
+
+    async def delete():
+        deleted.append(1)
+
+    event = SimpleNamespace(chat_id=-100, delete=delete, reply=_noop_reply, respond=_noop_reply)
+
+    client = _Client()
+    commands.register(client, _ctx(owner.id, _Notifier()))
+    await client.handlers["handle_check"](event)
+    return deleted, posted
+
+
+async def test_check_clears_its_command_even_when_the_quota_is_gone(db_session, owner, monkeypatch):
+    """`.check` is typed in a chat with the person being looked up. Leaving it
+    there tells them they were checked, and running out of quota is no reason
+    to make that exception."""
+    deleted, posted = await _run_check(db_session, owner, monkeypatch, quota_left=False)
+
+    assert deleted == [1]
+    assert posted, "and they are told why nothing happened"
+
+
+async def test_check_clears_its_command_on_the_happy_path_too(db_session, owner, monkeypatch):
+    deleted, _ = await _run_check(db_session, owner, monkeypatch, quota_left=True)
+    assert deleted == [1]

@@ -31,6 +31,33 @@ async def ref(client, entity_or_id, lang: str = "uk") -> str:
     return ref_str
 
 
+async def plain_ref(client, entity_or_id, lang: str = "uk") -> str:
+    """The same reference as `ref`, with no markup in it.
+
+    `ref` builds an HTML link for anyone without a username, which is right for
+    the manager bot (aiogram, HTML) and wrong everywhere else: Telethon posts
+    markdown, so the tag arrives as visible text in the very chat we are
+    standing in, and a .txt transcript has no markup to speak of at all. It only
+    ever showed on people without a username, since a `@handle` needs no tag.
+
+    A link is no loss in either place. In-chat notices name the person already
+    in front of you, and a transcript is read as text.
+    """
+    try:
+        entity = await client.get_entity(entity_or_id)
+    except Exception:
+        entity = None
+    username = getattr(entity, "username", None)
+    if username:
+        return f"@{username}"
+    name = _name(entity) if entity is not None else None
+    if name:
+        return name
+    if isinstance(entity_or_id, int):
+        return str(entity_or_id)
+    return formatting._t("unknown", lang)
+
+
 async def plain_name(client, entity_or_id) -> str | None:
     """Plain (non-HTML) display name/title, for storage rather than notices —
     e.g. the ignored-chats list needs a title, not a clickable `<a>` link."""

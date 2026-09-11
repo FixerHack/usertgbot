@@ -160,8 +160,8 @@ async def _owner_lang(db: AsyncSession, telegram_id: int) -> str:
 def create_app(
     *,
     bot_token: str,
-    webapp_api_id: int,
-    webapp_api_hash: str,
+    webapp_api_id: int | None,
+    webapp_api_hash: str | None,
     manager_bot_username: str | None = None,
     db_dependency=_default_db,
     session_checker: SessionChecker | None = None,
@@ -175,7 +175,12 @@ def create_app(
     @app.middleware("http")
     async def security_headers(request, call_next):
         response = await call_next(request)
-        response.headers["Content-Security-Policy"] = CSP
+        # Middleware on this app also runs for the sub-apps mounted on it
+        # (/pay, and the landing), whose policies are deliberately different —
+        # the payment page has to POST a form to the gateway, which this CSP
+        # forbids. So this acts as the default only: a sub-app that already
+        # set its own header keeps it.
+        response.headers.setdefault("Content-Security-Policy", CSP)
         response.headers["Referrer-Policy"] = "no-referrer"
         response.headers["X-Content-Type-Options"] = "nosniff"
         return response

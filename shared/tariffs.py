@@ -30,6 +30,13 @@ class TariffPlan:
     has_send: bool = False      # .send — bulk-post N copies of a message
     send_cooldown_seconds: int = 0   # min gap between .send runs; meaningless if has_send is False
     send_max_count: int = 0          # max copies per .send call; meaningless if has_send is False
+    # A second, slower limit on top of the cooldown. The cooldown paces a
+    # burst; this caps the day's worth of them, so a shorter cooldown does not
+    # quietly become "unlimited, just in smaller pieces".
+    send_max_per_hour: int = 0
+    has_mute: bool = False           # .mute / .unmute
+    has_record: bool = False         # .save / .unsave — transcribe a chat
+    has_clone: bool = False          # .clone / .stopc — echo someone back
     available: bool = True     # False => shown as "in development", not purchasable
 
     # NOTE: the human-readable feature bullets live in shared.i18n._FEATURES,
@@ -57,8 +64,10 @@ PLANS: dict[Tariff, TariffPlan] = {
         check_quota=10,
         has_autoresponder=True,
         has_send=True,
-        send_cooldown_seconds=600,   # 10 min
+        send_cooldown_seconds=300,   # 5 min
         send_max_count=50,
+        send_max_per_hour=5,
+        has_mute=True,
     ),
     Tariff.PREMIUM: TariffPlan(
         tariff=Tariff.PREMIUM,
@@ -69,6 +78,10 @@ PLANS: dict[Tariff, TariffPlan] = {
         has_send=True,
         send_cooldown_seconds=120,   # 2 min
         send_max_count=100,
+        send_max_per_hour=10,
+        has_mute=True,
+        has_record=True,
+        has_clone=True,
     ),
 }
 
@@ -95,6 +108,12 @@ def tariff_grants_command(tariff: Tariff | str, command: str) -> bool:
         return plan.has_autoresponder
     if command == "send":
         return plan.has_send
+    if command in ("mute", "unmute"):
+        return plan.has_mute
+    if command in ("save", "unsave"):
+        return plan.has_record
+    if command in ("clone", "stopc"):
+        return plan.has_clone
     return command in BASE_COMMANDS
 
 

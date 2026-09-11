@@ -29,11 +29,42 @@ far better than never detecting DM deletions at all.
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
+import sqlite3
 import time
 from dataclasses import dataclass
 
 import aiosqlite
+
+logger = logging.getLogger(__name__)
+
+
+async def _ensure_wal(conn: aiosqlite.Connection) -> None:
+    """Put the file in WAL mode, but only if it is not already there.
+
+    The journal mode belongs to the file, not to the connection: once any
+    connection has set it, every later one inherits it. Changing it, however,
+    needs an exclusive lock — and one process runs a worker per connected
+    account, all sharing this file, so a busy sibling means that lock never
+    comes. Asking for a mode the file is already in still went for the lock and
+    still failed, and because it failed during setup the connection was thrown
+    away, leaving that account with no cache at all: production logged the same
+    failure ~194 times an hour, once per message it should have stored.
+
+    A refused switch is survivable in a way a refused connection is not. If the
+    file is already WAL we never ask; if the switch is genuinely needed and
+    denied, we keep the connection and say so, since the fallback journal mode
+    still stores messages correctly.
+    """
+    async with conn.execute("PRAGMA journal_mode") as cursor:
+        row = await cursor.fetchone()
+    if row and str(row[0]).lower() == "wal":
+        return
+    try:
+        await conn.execute("PRAGMA journal_mode=WAL")
+    except sqlite3.OperationalError as exc:
+        logger.warning("could not switch the message cache to WAL (%s); continuing without it", exc)
 
 
 @dataclass
@@ -101,9 +132,17 @@ class RecentMessageCache:
                         if dirname:
                             os.makedirs(dirname, exist_ok=True)
                     conn = await aiosqlite.connect(self._db_path)
-                    await conn.execute("PRAGMA journal_mode=WAL")
-                    await conn.executescript(_SCHEMA)
-                    await conn.commit()
+                    try:
+                        await _ensure_wal(conn)
+                        await conn.executescript(_SCHEMA)
+                        await conn.commit()
+                    except BaseException:
+                        # Setup failing used to leak the connection: nothing
+                        # referenced it, nothing closed it, and the next message
+                        # opened another. In production that was a fresh handle
+                        # per failure, roughly two hundred an hour.
+                        await conn.close()
+                        raise
                     self._conn = conn
         return self._conn
 

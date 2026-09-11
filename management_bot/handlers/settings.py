@@ -2,20 +2,32 @@
 (Pro), and the ignored-chats list. Values live in db.UserSettings (JSON) /
 db.MediaBlob / db.IgnoredChat; the userbot reads them at runtime."""
 
+import contextlib
 import logging
 
 from aiogram import F, Router
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from aiogram.types import (
+    BufferedInputFile,
+    CallbackQuery,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    KeyboardButton,
+    KeyboardButtonRequestUsers,
+    Message,
+    ReplyKeyboardMarkup,
+)
 
 from db import queries
 from db.session import get_session
 from management_bot import keyboards, storage
 from management_bot.handlers import connect
+from management_bot.payment import build_wayforpay
 from management_bot.storage import upsert_user
-from shared.i18n import lang_of, t
+from shared.i18n import lang_of, t, variants
 from shared.settings_schema import (
     Autoresponder,
     Features,
@@ -24,7 +36,12 @@ from shared.settings_schema import (
     parse_buttons,
     parse_hhmm,
 )
-from shared.tariffs import Tariff, get_plan
+from shared.tariffs import Tariff, get_plan, tariff_grants_command
+from shared.transcript import build_archive
+
+# Telegram echoes this back with the picked user, so it only has to be stable
+# within one bot — it distinguishes our picker from any other we might add.
+_RECORD_REQUEST_ID = 1
 
 logger = logging.getLogger(__name__)
 router = Router(name="settings")
@@ -45,24 +62,42 @@ class SettingsStates(StatesGroup):
 # --- menus -----------------------------------------------------------------
 
 
-def _main_menu(has_account: bool, lang: str) -> InlineKeyboardMarkup:
+def _main_menu(
+    has_account: bool, lang: str, *, auto_renew: bool = False, can_record: bool = False
+) -> InlineKeyboardMarkup:
     account_btn = (
         InlineKeyboardButton(text=t(lang, "set_btn_unlink"), callback_data="set:unlink")
         if has_account
         else InlineKeyboardButton(text=t(lang, "set_btn_link"), callback_data="set:link")
     )
+    # Three short labels share the top row; everything below gets a row of its
+    # own so the longer names are not truncated into "Автовідповід…".
     rows = [
         [
             InlineKeyboardButton(text=t(lang, "set_btn_me"), callback_data="set:me"),
-            InlineKeyboardButton(text=t(lang, "set_btn_ar"), callback_data="set:ar"),
-            InlineKeyboardButton(text=t(lang, "set_btn_ignored"), callback_data="set:ignored"),
-        ],
-        [
             InlineKeyboardButton(text=t(lang, "set_btn_features"), callback_data="set:features"),
             InlineKeyboardButton(text=t(lang, "set_btn_lang"), callback_data="set:lang"),
-            account_btn,
         ],
+        [InlineKeyboardButton(text=t(lang, "set_btn_ar"), callback_data="set:ar")],
+        [InlineKeyboardButton(text=t(lang, "set_btn_ignored"), callback_data="set:ignored")],
     ]
+    if can_record:
+        # Only on a plan that includes it — a button that answers
+        # "your tariff does not include this" is a worse door than no door.
+        rows.append([InlineKeyboardButton(text=t(lang, "rec_btn_open"), callback_data="set:rec")])
+    rows += [
+        [account_btn],
+        # Every submenu has a way back to settings; settings itself had none,
+        # so the only way out was the reply keyboard below the input box.
+        [InlineKeyboardButton(text=t(lang, "btn_menu"), callback_data="set:menu")],
+    ]
+    if auto_renew:
+        # Only shown while there is something to cancel — a standing card
+        # mandate is exactly the thing a user must be able to stop without
+        # writing to support.
+        rows.append(
+            [InlineKeyboardButton(text=t(lang, "set_autorenew_btn_cancel"), callback_data="set:autorenew:cancel")]
+        )
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -96,12 +131,33 @@ async def _build_settings(db, telegram_id: int, lang: str) -> tuple[str, InlineK
         used = (await queries.peek_check_quota(db, user.id, quota)).used
         lines.append(t(lang, "set_check_quota", left=max(quota - used, 0), total=quota))
 
-    return "\n".join(lines), _main_menu(has_account, lang)
+    auto_renew = bool(active and active.auto_renew and active.order_reference)
+    if auto_renew:
+        lines.append(t(lang, "set_autorenew_on"))
+
+    can_record = bool(active and tariff_grants_command(active.tariff, "save"))
+    return "\n".join(lines), _main_menu(
+        has_account, lang, auto_renew=auto_renew, can_record=can_record
+    )
 
 
 async def _has_active_sub(telegram_id: int) -> bool:
     async with get_session() as db:
         return await queries.get_active_subscription_by_telegram_id(db, telegram_id) is not None
+
+
+async def _may_record(telegram_id: int) -> bool:
+    """Whether this account's plan includes chat recording, asked at the moment
+    it is used rather than at the moment the button was drawn.
+
+    The two are not the same. The picker's reply keyboard stays in the chat
+    after a subscription lapses, and the screen itself is one callback anyone
+    can repeat; the worker then records any active row it finds, without
+    consulting the tariff again. So the check belongs here, on every entrance.
+    """
+    async with get_session() as db:
+        active = await queries.get_active_subscription_by_telegram_id(db, telegram_id)
+    return bool(active and tariff_grants_command(active.tariff, "save"))
 
 
 def _me_menu(lang: str) -> InlineKeyboardMarkup:
@@ -166,20 +222,31 @@ _FEATURE_ROWS = [
     [("info", "feat_info"), ("me", "feat_me")],
     [("ban", "feat_ban"), ("check", "feat_check")],
     [("viewonce_photo", "feat_viewonce_photo"), ("viewonce_voice", "feat_viewonce_voice")],
+    [("viewonce_video", "feat_viewonce_video"), ("send", "feat_send")],
+    [("mute", "feat_mute"), ("record", "feat_record")],
+    [("clone", "feat_clone")],
 ]
 
+# Switches whose feature the tariff may not include at all. A switch for
+# something the plan does not grant is a lie either way round: off looks like
+# the reason it does not work, on promises something that will not happen.
+_TARIFF_GATED = {"send": "send", "mute": "mute", "record": "save", "clone": "clone"}
 
-def _features_menu(features: Features, lang: str) -> InlineKeyboardMarkup:
-    rows = [
-        [
+
+def _features_menu(features: Features, lang: str, *, tariff: str | None = None) -> InlineKeyboardMarkup:
+    rows = []
+    for row in _FEATURE_ROWS:
+        buttons = [
             InlineKeyboardButton(
                 text=_feat_label(lang, label_key, getattr(features, field)),
                 callback_data=f"set:features:toggle:{field}",
             )
             for field, label_key in row
+            if field not in _TARIFF_GATED
+            or (tariff is not None and tariff_grants_command(tariff, _TARIFF_GATED[field]))
         ]
-        for row in _FEATURE_ROWS
-    ]
+        if buttons:
+            rows.append(buttons)
     rows.append([InlineKeyboardButton(text=t(lang, "btn_back"), callback_data="set:back")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -214,6 +281,44 @@ async def on_back(callback: CallbackQuery, state: FSMContext) -> None:
         text, kb = await _build_settings(db, callback.message.chat.id, lang)
     await callback.message.edit_text(text, reply_markup=kb)
     await callback.answer()
+
+
+@router.callback_query(F.data == "set:autorenew:cancel")
+async def on_cancel_autorenew(callback: CallbackQuery) -> None:
+    lang = lang_of(callback)
+    telegram_id = callback.message.chat.id
+    async with get_session() as db:
+        sub = await queries.get_active_subscription_by_telegram_id(db, telegram_id)
+        if sub is None or not sub.auto_renew or not sub.order_reference:
+            await callback.answer()
+            return
+        order_reference, expires_at = sub.order_reference, sub.expires_at
+
+    provider = build_wayforpay()
+    if provider is None:
+        await callback.answer(t(lang, "set_autorenew_cancel_failed"), show_alert=True)
+        return
+
+    # Cancel at the gateway BEFORE clearing our flag. The other order would
+    # show "cancelled" to a user whose card is still being charged every
+    # month — the worst possible failure mode for a standing mandate.
+    try:
+        await provider.remove_regular(order_reference)
+    except Exception:
+        logger.exception("wayforpay: failed to remove regular payment %s", order_reference)
+        await callback.answer(t(lang, "set_autorenew_cancel_failed"), show_alert=True)
+        return
+
+    async with get_session() as db:
+        sub = await queries.get_active_subscription_by_telegram_id(db, telegram_id)
+        if sub is not None:
+            sub.auto_renew = False
+            await db.commit()
+        text, kb = await _build_settings(db, telegram_id, lang)
+
+    date = f"{expires_at:%d.%m.%Y}" if expires_at else "—"
+    await callback.answer(t(lang, "set_autorenew_cancelled", date=date), show_alert=True)
+    await callback.message.edit_text(text, reply_markup=kb)
 
 
 @router.callback_query(F.data == "set:me")
@@ -270,12 +375,36 @@ async def _load_features(session, telegram_id: int) -> tuple[int | None, Feature
     return user.id, Features.from_dict(row.features)
 
 
+async def _current_tariff(db, telegram_id: int) -> str | None:
+    sub = await queries.get_active_subscription_by_telegram_id(db, telegram_id)
+    return sub.tariff if sub is not None else None
+
+
+@router.callback_query(F.data == "set:menu")
+async def on_menu(callback: CallbackQuery, state: FSMContext) -> None:
+    """Back to the dashboard. The settings screen is replaced rather than
+    added to — leaving it behind would put two live keyboards in the chat,
+    and the stale one keeps answering."""
+    from management_bot.handlers.start import show_dashboard
+
+    await state.clear()
+    await show_dashboard(callback.message)
+    try:
+        await callback.message.delete()
+    except Exception:
+        logger.debug("could not clear the settings screen", exc_info=True)
+    await callback.answer()
+
+
 @router.callback_query(F.data == "set:features")
 async def on_features(callback: CallbackQuery) -> None:
     lang = lang_of(callback)
     async with get_session() as db:
         _, features = await _load_features(db, callback.message.chat.id)
-    await callback.message.edit_text(t(lang, "features_title"), reply_markup=_features_menu(features, lang))
+        tariff = await _current_tariff(db, callback.message.chat.id)
+    await callback.message.edit_text(
+        t(lang, "features_title"), reply_markup=_features_menu(features, lang, tariff=tariff)
+    )
     await callback.answer()
 
 
@@ -291,7 +420,10 @@ async def on_features_toggle(callback: CallbackQuery) -> None:
         setattr(features, key, not getattr(features, key))
         await queries.set_features(db, uid, features.to_dict())
         await db.commit()
-    await callback.message.edit_text(t(lang, "features_title"), reply_markup=_features_menu(features, lang))
+        tariff = await _current_tariff(db, callback.message.chat.id)
+    await callback.message.edit_text(
+        t(lang, "features_title"), reply_markup=_features_menu(features, lang, tariff=tariff)
+    )
     await callback.answer()
 
 
@@ -589,3 +721,187 @@ def _render_ar_preview(ar: Autoresponder, lang: str) -> str:
         f"{ar.message or '—'}\n"
         f"🖼 {'✓' if ar.has_photo else '✗'} · 🕒 {window} · 🚫 {len(ar.exceptions)} · 🔘 {len(ar.buttons)}"
     )
+
+
+# --- chat recording --------------------------------------------------------
+
+
+def _recordings_menu(rows, lang: str) -> InlineKeyboardMarkup:
+    """One stop button per running recording, plus the picker."""
+    buttons = [
+        [
+            InlineKeyboardButton(
+                text=t(lang, "rec_btn_stop", chat=row.chat_title or row.chat_id),
+                callback_data=f"set:rec:stop:{row.id}",
+            )
+        ]
+        for row in rows
+    ]
+    buttons.append([InlineKeyboardButton(text=t(lang, "rec_btn_pick"), callback_data="set:rec:pick")])
+    buttons.append([InlineKeyboardButton(text=t(lang, "btn_back"), callback_data="set:back")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+async def _recordings_screen(db, telegram_id: int, lang: str):
+    user = await queries.get_user_by_telegram_id(db, telegram_id)
+    rows = await queries.get_active_recordings(db, user.id) if user else []
+    text = t(lang, "rec_menu_title")
+    if not rows:
+        text = f"{text}\n\n{t(lang, 'rec_menu_none')}"
+    return text, _recordings_menu(rows, lang)
+
+
+@router.callback_query(F.data == "set:rec")
+async def on_recordings(callback: CallbackQuery) -> None:
+    lang = lang_of(callback)
+    if not await _may_record(callback.message.chat.id):
+        await callback.answer(t(lang, "rec_needs_tariff"), show_alert=True)
+        return
+    async with get_session() as db:
+        text, kb = await _recordings_screen(db, callback.message.chat.id, lang)
+    await callback.message.edit_text(text, reply_markup=kb)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "set:rec:pick")
+async def on_recordings_pick(callback: CallbackQuery, state: FSMContext) -> None:
+    """Telegram's own contact picker. The bot has no idea what dialogs someone
+    has; this asks them and hands back the id, which for a private chat is the
+    chat id too."""
+    lang = lang_of(callback)
+    if not await _may_record(callback.message.chat.id):
+        await callback.answer(t(lang, "rec_needs_tariff"), show_alert=True)
+        return
+    keyboard = ReplyKeyboardMarkup(
+        keyboard=[
+            [
+                KeyboardButton(
+                    text=t(lang, "rec_pick_button"),
+                    request_users=KeyboardButtonRequestUsers(
+                        request_id=_RECORD_REQUEST_ID,
+                        user_is_bot=False,
+                        max_quantity=1,
+                        request_name=True,
+                        request_username=True,
+                    ),
+                )
+            ],
+            [KeyboardButton(text=t(lang, "rec_pick_cancel"))],
+        ],
+        resize_keyboard=True,
+        one_time_keyboard=True,
+    )
+    prompt = await callback.message.answer(t(lang, "rec_pick_prompt"), reply_markup=keyboard)
+    # Remembered so the prompt can be taken back down with the reply it asked
+    # for; a restart only costs one stranded line, not a broken flow.
+    await state.update_data(rec_prompt_id=prompt.message_id)
+    await callback.answer()
+
+
+async def _clear_pick(message: Message, state: FSMContext) -> None:
+    """Take the picker's paper trail back down.
+
+    The prompt and Telegram's "you shared a contact" line are both machinery,
+    not conversation, and they were stacking up a fresh pair on screen every
+    time someone opened the picker.
+    """
+    data = await state.get_data()
+    prompt_id = data.get("rec_prompt_id")
+    if prompt_id is not None:
+        await state.update_data(rec_prompt_id=None)
+    for message_id in (prompt_id, message.message_id):
+        if message_id is None:
+            continue
+        # Older than 48h, or already gone — nothing here is worth an error.
+        with contextlib.suppress(TelegramBadRequest):
+            await message.bot.delete_message(message.chat.id, message_id)
+
+
+@router.message(F.text.in_(variants("rec_pick_cancel")))
+async def on_pick_cancel(message: Message, state: FSMContext) -> None:
+    """Without this the cancel button is a lie: it sends a word the bot has no
+    handler for, so the picker keyboard stays up and nothing answers."""
+    lang = lang_of(message)
+    await _clear_pick(message, state)
+    await message.answer(t(lang, "rec_pick_cancelled"), reply_markup=keyboards.main_menu(lang))
+
+
+@router.message(F.users_shared)
+async def on_user_picked(message: Message, state: FSMContext) -> None:
+    lang = lang_of(message)
+    shared = message.users_shared
+    if shared.request_id != _RECORD_REQUEST_ID or not shared.user_ids:
+        return
+    await _clear_pick(message, state)
+
+    chat_id = shared.user_ids[0]
+    title = _shared_name(shared) or str(chat_id)
+
+    if not await _may_record(message.chat.id):
+        # The keyboard that sent this outlives the subscription that earned it.
+        await message.answer(t(lang, "rec_needs_tariff"), reply_markup=keyboards.main_menu(lang))
+        return
+
+    async with get_session() as db:
+        user = await queries.get_user_by_telegram_id(db, message.chat.id)
+        if user is None:
+            await message.answer(t(lang, "rec_needs_account"), reply_markup=keyboards.main_menu(lang))
+            return
+        running = {row.chat_id for row in await queries.get_active_recordings(db, user.id)}
+        if chat_id in running:
+            await message.answer(t(lang, "rec_already_for"), reply_markup=keyboards.main_menu(lang))
+            return
+        await queries.start_recording(db, owner_user_id=user.id, chat_id=chat_id, chat_title=title)
+        await db.commit()
+
+    # The worker polls for this, so it starts collecting within seconds rather
+    # than instantly — worth saying plainly rather than implying otherwise.
+    await message.answer(
+        t(lang, "rec_started_for", chat=title), reply_markup=keyboards.main_menu(lang)
+    )
+
+
+def _shared_name(shared) -> str | None:
+    users = getattr(shared, "users", None) or []
+    if not users:
+        return None
+    user = users[0]
+    if getattr(user, "username", None):
+        return f"@{user.username}"
+    parts = [getattr(user, "first_name", None), getattr(user, "last_name", None)]
+    return " ".join(p for p in parts if p) or None
+
+
+@router.callback_query(F.data.startswith("set:rec:stop:"))
+async def on_recording_stop(callback: CallbackQuery) -> None:
+    lang = lang_of(callback)
+    recording_id = int(callback.data.rsplit(":", 1)[1])
+
+    async with get_session() as db:
+        user = await queries.get_user_by_telegram_id(db, callback.message.chat.id)
+        rows = await queries.get_active_recordings(db, user.id) if user else []
+        target = next((r for r in rows if r.id == recording_id), None)
+        if target is None:
+            # Already stopped, from here or with .unsave in the chat.
+            text, kb = await _recordings_screen(db, callback.message.chat.id, lang)
+            await callback.message.edit_text(text, reply_markup=kb)
+            await callback.answer()
+            return
+
+        title = target.chat_title or str(target.chat_id)
+        await queries.stop_recording(db, recording_id, owner_user_id=user.id)
+        messages = await queries.get_recorded_messages(db, recording_id, owner_user_id=user.id)
+        await db.commit()
+        archive = build_archive(title, messages, lang)
+        text, kb = await _recordings_screen(db, callback.message.chat.id, lang)
+
+    if messages:
+        await callback.message.answer_document(
+            BufferedInputFile(archive.encode("utf-8"), filename=f"chat-{target.chat_id}.txt"),
+            caption=t(lang, "rec_stopped_for", count=len(messages)),
+        )
+    else:
+        await callback.message.answer(t(lang, "rec_stopped_empty"))
+
+    await callback.message.edit_text(text, reply_markup=kb)
+    await callback.answer()

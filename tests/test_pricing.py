@@ -77,3 +77,21 @@ async def test_get_rate_falls_back_on_failure():
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     rate = await pricing.get_usd_uah_rate(client=client)
     assert rate == pricing._FALLBACK_USD_UAH
+
+
+async def test_hryvnia_is_charged_at_the_round_tariff_price():
+    """Deliberate exception to the profit guarantee: the card price is the one
+    a buyer reads and compares, so it stays round and the acquirer's ~2% comes
+    out of our margin. Every other channel still grosses up."""
+    for profit in (50, 150, 500, 1500, 5000):
+        result = await pricing.compute_prices(profit, usd_uah_rate=44.74)
+        assert result.uah_invoice == profit
+        assert isinstance(result.uah_invoice, int)
+
+
+async def test_only_the_hryvnia_channel_absorbs_its_fee():
+    """Guards against the round-price decision quietly spreading to Stars and
+    crypto, which are still expected to net the full target."""
+    result = await pricing.compute_prices(500, usd_uah_rate=44.74)
+    assert result.usdt_invoice > result.usd_net
+    assert result.stars * pricing.STARS_NET_USD_PER_STAR >= result.usd_net

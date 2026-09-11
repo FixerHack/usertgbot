@@ -19,6 +19,10 @@ import logging
 import uvicorn
 
 from connect_web.app import create_app
+from landing.app import create_app as create_landing_app
+from management_bot.payment.wayforpay import WayForPayProvider
+from pay_web.app import create_app as create_pay_app
+from shared.notify import ManagerNotifier
 
 logger = logging.getLogger(__name__)
 
@@ -34,9 +38,13 @@ class ConnectWebServer:
         return self._task is not None and not self._task.done()
 
     async def start(
-        self, *, port: int, bot_token: str, webapp_api_id: int, webapp_api_hash: str,
+        self, *, port: int, bot_token: str,
+        webapp_api_id: int | None = None, webapp_api_hash: str | None = None,
         ngrok_authtoken: str | None = None, ngrok_domain: str | None = None,
         manager_bot_username: str | None = None,
+        wayforpay: WayForPayProvider | None = None,
+        bot_username: str | None = None,
+        support_contact: str | None = None,
         public_url: str | None = None, host: str = "127.0.0.1",
     ) -> str:
         """`public_url` is the production path: a real domain already terminating
@@ -54,6 +62,32 @@ class ConnectWebServer:
         app = create_app(
             bot_token=bot_token, webapp_api_id=webapp_api_id, webapp_api_hash=webapp_api_hash,
             manager_bot_username=manager_bot_username,
+        )
+        # Card payments share this origin rather than opening a second port:
+        # one domain to register with the acquirer, one thing for Caddy to
+        # proxy. `base_url` is read lazily because it is only known once the
+        # tunnel (or the configured public URL) below has resolved.
+        app.mount(
+            "/pay",
+            create_pay_app(
+                provider=wayforpay,
+                base_url=lambda: self.base_url,
+                # Only built when there is a gateway to report on: the
+                # notifier opens a Bot API session, and an unconfigured
+                # deployment has nothing to send through it.
+                notifier=ManagerNotifier(bot_token) if wayforpay is not None else None,
+                bot_username=bot_username,
+            ),
+        )
+        # Mounted LAST and at the root, so it only ever sees paths no more
+        # specific route claimed. Registration order is what keeps /connect
+        # and /pay from being swallowed here.
+        app.mount(
+            "/",
+            create_landing_app(
+                bot_username=bot_username,
+                support_contact=support_contact,
+            ),
         )
         config = uvicorn.Config(app, host=host, port=port, log_level="warning")
         self._server = uvicorn.Server(config)

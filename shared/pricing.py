@@ -16,6 +16,11 @@ Fee constants (update the comments' date if the underlying deal changes):
     Fragment withdrawal chain (Stars -> TON -> fiat), ~$13 per 1,000 Stars as
     of mid-2026 per multiple sources (see chat for links). This is the Stars
     counterpart of CRYPTO_FEE: how much of the face value survives cash-out.
+The hryvnia channel is the deliberate exception to the profit guarantee: it
+charges the round tariff price and lets WayForPay's ~2% come out of our own
+margin, because a card price is the one a buyer reads and compares, and 511 UAH
+reads worse than 500. That is an owner's decision, not an oversight — every
+other channel still grosses up.
 """
 
 from __future__ import annotations
@@ -80,6 +85,11 @@ class PriceBreakdown:
     usd_net: float        # profit_uah converted to USD, rounded to tenths
     usdt_invoice: float   # Crypto Pay invoice amount (USD/USDT) — grossed for CRYPTO_FEE
     stars: int            # Stars invoice amount — grossed for the Fragment withdrawal cut
+    # What the CARD is charged: the round tariff price, deliberately NOT
+    # grossed up for the acquirer's fee (see the module docstring). Kept as
+    # its own field so the card price has one place to change if that call is
+    # ever revisited.
+    uah_invoice: int
 
 
 async def compute_prices(profit_uah: int, *, usd_uah_rate: float | None = None) -> PriceBreakdown:
@@ -97,4 +107,5 @@ async def compute_prices(profit_uah: int, *, usd_uah_rate: float | None = None) 
         # than e.g. 173⭐, and still guarantees the profit target since it
         # only ever rounds up from the exact grossed-up figure.
         stars=max(STARS_ROUND_STEP, math.ceil(stars / STARS_ROUND_STEP) * STARS_ROUND_STEP),
+        uah_invoice=int(profit_uah),
     )

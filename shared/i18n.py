@@ -95,6 +95,13 @@ _TR: dict[str, tuple[str, str, str]] = {
         "💳 Subscription: <b>none</b>",
     ),
     "dash_expires": (" до {date}", " до {date}", " until {date}"),
+    "sub_state_expired_on": ("завершилась {date}", "завершилась {date}", "ended {date}"),
+    # The subscription state as a word. It used to reach the screen as the raw
+    # database value ("active"), untranslated, in every language.
+    "sub_state_active": ("активна", "активна", "active"),
+    "sub_state_expired": ("завершилась", "завершилась", "expired"),
+    "sub_state_pending": ("очікує оплати", "ожидает оплаты", "awaiting payment"),
+    "sub_state_cancelled": ("скасована", "отменена", "cancelled"),
     "dash_account": ("🔌 Акаунт: <b>{conn}</b>", "🔌 Аккаунт: <b>{conn}</b>", "🔌 Account: <b>{conn}</b>"),
     "conn_yes": ("✅ підключено", "✅ подключён", "✅ connected"),
     "conn_no": ("❌ не підключено", "❌ не подключён", "❌ not connected"),
@@ -189,6 +196,9 @@ _TR: dict[str, tuple[str, str, str]] = {
         "• <code>.ban</code> — в особистих: заблокувати й видалити; у групі: вийти\n"
         "• <code>.check</code> — перевірка (ліміт залежить від тарифу)\n"
         "• <code>.send N текст</code> — надіслати N копій повідомлення\n"
+        "• <code>.mute</code> / <code>.unmute</code> — тиша для однієї людини в одному чаті <i>(Pro, Premium)</i>\n"
+        "• <code>.save</code> / <code>.unsave</code> — запис чату у текстовий файл <i>(Premium)</i>\n"
+        "• <code>.clone</code> / <code>.stopc</code> — повторювати за людиною її ж повідомлення <i>(Premium)</i>\n"
         "\n"
         "{autosave}\n"
         "\n"
@@ -197,8 +207,8 @@ _TR: dict[str, tuple[str, str, str]] = {
         "\n"
         "<b>Що дає який тариф</b>\n"
         "• <b>Standard</b> — .info, .me, .ban, .check (5/міс), автозбереження\n"
-        "• <b>Pro</b> — усе зі Standard + .check 10/міс + автовідповідач + .send (до 50 копій, раз на 10 хв)\n"
-        "• <b>Premium</b> — усе з Pro + .check 30/міс + .send (до 100 копій, раз на 2 хв)",
+        "• <b>Pro</b> — усе зі Standard + .check 10/міс + автовідповідач + .send (50 копій, раз на 5 хв) + .mute\n"
+        "• <b>Premium</b> — усе з Pro + .check 30/міс + .send (100 копій, раз на 2 хв) + .save + .clone",
         "❓ <b>Помощь — весь функционал</b>\n"
         "\n"
         "{bot}\n"
@@ -212,6 +222,9 @@ _TR: dict[str, tuple[str, str, str]] = {
         "• <code>.ban</code> — в личных: заблокировать и удалить; в группе: выйти\n"
         "• <code>.check</code> — проверка (лимит зависит от тарифа)\n"
         "• <code>.send N текст</code> — отправить N копий сообщения\n"
+        "• <code>.mute</code> / <code>.unmute</code> — тишина для одного человека в одном чате <i>(Pro, Premium)</i>\n"
+        "• <code>.save</code> / <code>.unsave</code> — запись чата в текстовый файл <i>(Premium)</i>\n"
+        "• <code>.clone</code> / <code>.stopc</code> — повторять за человеком его же сообщения <i>(Premium)</i>\n"
         "\n"
         "{autosave}\n"
         "\n"
@@ -220,8 +233,8 @@ _TR: dict[str, tuple[str, str, str]] = {
         "\n"
         "<b>Что даёт какой тариф</b>\n"
         "• <b>Standard</b> — .info, .me, .ban, .check (5/мес), автосохранение\n"
-        "• <b>Pro</b> — всё из Standard + .check 10/мес + автоответчик + .send (до 50 копий, раз в 10 мин)\n"
-        "• <b>Premium</b> — всё из Pro + .check 30/мес + .send (до 100 копий, раз в 2 мин)",
+        "• <b>Pro</b> — всё из Standard + .check 10/мес + автоответчик + .send (50 копий, раз в 5 мин) + .mute\n"
+        "• <b>Premium</b> — всё из Pro + .check 30/мес + .send (100 копий, раз в 2 мин) + .save + .clone",
         "❓ <b>Help — everything the service does</b>\n"
         "\n"
         "{bot}\n"
@@ -235,6 +248,12 @@ _TR: dict[str, tuple[str, str, str]] = {
         "• <code>.ban</code> — in DMs: block and delete; in a group: leave\n"
         "• <code>.check</code> — lookup (allowance depends on your plan)\n"
         "• <code>.send N text</code> — post N copies of a message\n"
+        "• <code>.mute</code> / <code>.unmute</code> — silence one person in one chat <i>(Pro, Premium)</i>\n"
+        "• <code>.save</code> / <code>.unsave</code> — record a chat to a text file <i>(Premium)</i>\n"
+        "• <code>.clone</code> / <code>.stopc</code> — repeat someone's messages back at them <i>(Premium)</i>\n"
+        "• <code>.mute</code> / <code>.unmute</code> — silence one person in one chat <i>(Pro, Premium)</i>\n"
+        "• <code>.save</code> / <code>.unsave</code> — record a chat to a text file <i>(Premium)</i>\n"
+        "• <code>.clone</code> / <code>.stopc</code> — repeat someone's messages back at them <i>(Premium)</i>\n"
         "\n"
         "{autosave}\n"
         "\n"
@@ -243,8 +262,8 @@ _TR: dict[str, tuple[str, str, str]] = {
         "\n"
         "<b>What each plan includes</b>\n"
         "• <b>Standard</b> — .info, .me, .ban, .check (5/mo), auto-save\n"
-        "• <b>Pro</b> — everything in Standard + .check 10/mo + autoresponder + .send (up to 50 copies, once per 10 min)\n"
-        "• <b>Premium</b> — everything in Pro + .check 30/mo + .send (up to 100 copies, once per 2 min)",
+        "• <b>Pro</b> — everything in Standard + .check 10/mo + autoresponder + .send (50 copies, once per 5 min) + .mute\n"
+        "• <b>Premium</b> — everything in Pro + .check 30/mo + .send (100 copies, once per 2 min) + .save + .clone",
     ),
     "help_standard": (
         "❓ <b>Довідка — ваш тариф: Standard</b>\n"
@@ -318,7 +337,8 @@ _TR: dict[str, tuple[str, str, str]] = {
         "• <code>.me</code> — надіслати свою візитку\n"
         "• <code>.ban</code> — в особистих: заблокувати й видалити; у групі: вийти\n"
         "• <code>.check</code> — <b>10 перевірок на місяць</b>, лічильник оновлюється 1-го числа\n"
-        "• <code>.send N текст</code> — <b>до 50 копій за раз, раз на 10 хвилин</b>. Якщо Telegram тимчасово обмежить надсилання, бот зупиниться і напише, скільки встиг.\n"
+        "• <code>.send N текст</code> — <b>до 50 копій за раз, раз на 5 хвилин, не більше 5 разів на годину</b>. Якщо Telegram тимчасово обмежить надсилання, бот зупиниться і напише, скільки встиг.\n"
+        "• <code>.mute</code> / <code>.mute 180</code> — тиша: повідомлення цієї людини в цьому чаті видалятимуться, доки не напишете <code>.unmute</code> (або поки не мине вказана кількість хвилин). У групі — відповіддю на її повідомлення.\n"
         "\n"
         "{autosave}\n"
         "\n"
@@ -336,7 +356,8 @@ _TR: dict[str, tuple[str, str, str]] = {
         "• <code>.me</code> — отправить свою визитку\n"
         "• <code>.ban</code> — в личных: заблокировать и удалить; в группе: выйти\n"
         "• <code>.check</code> — <b>10 проверок в месяц</b>, счётчик обновляется 1-го числа\n"
-        "• <code>.send N текст</code> — <b>до 50 копий за раз, раз в 10 минут</b>. Если Telegram временно ограничит отправку, бот остановится и напишет, сколько успел.\n"
+        "• <code>.send N текст</code> — <b>до 50 копий за раз, раз в 5 минут, не больше 5 раз в час</b>. Если Telegram временно ограничит отправку, бот остановится и напишет, сколько успел.\n"
+        "• <code>.mute</code> / <code>.mute 180</code> — тишина: сообщения этого человека в этом чате будут удаляться, пока не напишете <code>.unmute</code> (или пока не пройдёт указанное число минут). В группе — ответом на его сообщение.\n"
         "\n"
         "{autosave}\n"
         "\n"
@@ -354,7 +375,8 @@ _TR: dict[str, tuple[str, str, str]] = {
         "• <code>.me</code> — send your own card\n"
         "• <code>.ban</code> — in DMs: block and delete; in a group: leave\n"
         "• <code>.check</code> — <b>10 lookups per month</b>, resets on the 1st\n"
-        "• <code>.send N text</code> — <b>up to 50 copies at a time, once every 10 minutes</b>. If Telegram throttles sending, the bot stops and tells you how many went out.\n"
+        "• <code>.send N text</code> — <b>up to 50 copies at a time, once every 5 minutes, at most 5 times an hour</b>. If Telegram throttles sending, the bot stops and tells you how many went out.\n"
+        "• <code>.mute</code> / <code>.mute 180</code> — silence: this person's messages in this chat are deleted until you send <code>.unmute</code> (or the given number of minutes passes). In a group, reply to their message.\n"
         "\n"
         "{autosave}\n"
         "\n"
@@ -374,14 +396,17 @@ _TR: dict[str, tuple[str, str, str]] = {
         "• <code>.me</code> — надіслати свою візитку\n"
         "• <code>.ban</code> — в особистих: заблокувати й видалити; у групі: вийти\n"
         "• <code>.check</code> — <b>30 перевірок на місяць</b>, лічильник оновлюється 1-го числа\n"
-        "• <code>.send N текст</code> — <b>до 100 копій за раз, раз на 2 хвилини</b>. Якщо Telegram тимчасово обмежить надсилання, бот зупиниться і напише, скільки встиг.\n"
+        "• <code>.send N текст</code> — <b>до 100 копій за раз, раз на 2 хвилини, не більше 10 разів на годину</b>. Якщо Telegram тимчасово обмежить надсилання, бот зупиниться і напише, скільки встиг.\n"
+        "• <code>.mute</code> / <code>.mute 180</code> — тиша: повідомлення цієї людини в цьому чаті видалятимуться, доки не напишете <code>.unmute</code>. У групі — відповіддю на її повідомлення.\n"
+        "• <code>.save</code> / <code>.unsave</code> — запис чату. Усе сказане з моменту <code>.save</code> збирається у текстовий файл, який приходить вам у менеджер-бот після <code>.unsave</code>. У самому чаті нічого не з'являється.\n"
+        "• <code>.clone</code> / <code>.stopc</code> — повторювати за людиною її ж повідомлення, доки не зупините.\n"
         "\n"
         "{autosave}\n"
         "\n"
         "<b>Автовідповідач</b>\n"
         "Автоматична відповідь на вхідні, поки вас немає: текст, фото, кнопки-посилання, часове вікно й винятки — усе в ⚙️ Налаштування. Кожне спрацювання дублюється вам у менеджер-бот.\n"
         "\n"
-        "Premium — найповніший тариф: усе з Pro, але втричі більший ліміт <code>.check</code>, удвічі більша розсилка і вп'ятеро коротший інтервал між нею.",
+        "Premium — найповніший тариф: усе з Pro, втричі більший ліміт <code>.check</code>, удвічі більша розсилка — і дві команди, яких немає ніде більше: <code>.save</code> та <code>.clone</code>.",
         "❓ <b>Помощь — ваш тариф: Premium</b>\n"
         "\n"
         "{bot}\n"
@@ -394,14 +419,17 @@ _TR: dict[str, tuple[str, str, str]] = {
         "• <code>.me</code> — отправить свою визитку\n"
         "• <code>.ban</code> — в личных: заблокировать и удалить; в группе: выйти\n"
         "• <code>.check</code> — <b>30 проверок в месяц</b>, счётчик обновляется 1-го числа\n"
-        "• <code>.send N текст</code> — <b>до 100 копий за раз, раз в 2 минуты</b>. Если Telegram временно ограничит отправку, бот остановится и напишет, сколько успел.\n"
+        "• <code>.send N текст</code> — <b>до 100 копий за раз, раз в 2 минуты, не больше 10 раз в час</b>. Если Telegram временно ограничит отправку, бот остановится и напишет, сколько успел.\n"
+        "• <code>.mute</code> / <code>.mute 180</code> — тишина: сообщения этого человека в этом чате будут удаляться, пока не напишете <code>.unmute</code>. В группе — ответом на его сообщение.\n"
+        "• <code>.save</code> / <code>.unsave</code> — запись чата. Всё сказанное с момента <code>.save</code> собирается в текстовый файл, который приходит вам в менеджер-бот после <code>.unsave</code>. В самом чате ничего не появляется.\n"
+        "• <code>.clone</code> / <code>.stopc</code> — повторять за человеком его же сообщения, пока не остановите.\n"
         "\n"
         "{autosave}\n"
         "\n"
         "<b>Автоответчик</b>\n"
         "Автоматический ответ на входящие, пока вас нет: текст, фото, кнопки-ссылки, временное окно и исключения — всё в ⚙️ Настройки. Каждое срабатывание дублируется вам в менеджер-бот.\n"
         "\n"
-        "Premium — самый полный тариф: всё из Pro, но втрое больший лимит <code>.check</code>, вдвое большая рассылка и в пять раз более короткий интервал между ней.",
+        "Premium — самый полный тариф: всё из Pro, втрое больший лимит <code>.check</code>, вдвое большая рассылка — и две команды, которых нет больше нигде: <code>.save</code> и <code>.clone</code>.",
         "❓ <b>Help — your plan: Premium</b>\n"
         "\n"
         "{bot}\n"
@@ -414,14 +442,17 @@ _TR: dict[str, tuple[str, str, str]] = {
         "• <code>.me</code> — send your own card\n"
         "• <code>.ban</code> — in DMs: block and delete; in a group: leave\n"
         "• <code>.check</code> — <b>30 lookups per month</b>, resets on the 1st\n"
-        "• <code>.send N text</code> — <b>up to 100 copies at a time, once every 2 minutes</b>. If Telegram throttles sending, the bot stops and tells you how many went out.\n"
+        "• <code>.send N text</code> — <b>up to 100 copies at a time, once every 2 minutes, at most 10 times an hour</b>. If Telegram throttles sending, the bot stops and tells you how many went out.\n"
+        "• <code>.mute</code> / <code>.mute 180</code> — silence: this person's messages in this chat are deleted until you send <code>.unmute</code>. In a group, reply to their message.\n"
+        "• <code>.save</code> / <code>.unsave</code> — record the chat. Everything said from <code>.save</code> onwards is collected into a text file, delivered to you in the manager bot after <code>.unsave</code>. Nothing appears in the chat itself.\n"
+        "• <code>.clone</code> / <code>.stopc</code> — repeat someone's messages back at them until you stop.\n"
         "\n"
         "{autosave}\n"
         "\n"
         "<b>Autoresponder</b>\n"
         "Replies to incoming messages while you're away: text, photo, link buttons, a time window and exceptions — all in ⚙️ Settings. Every reply is also copied to your manager bot.\n"
         "\n"
-        "Premium is the fullest plan: everything in Pro, with three times the <code>.check</code> allowance, twice the bulk-send size and a five times shorter gap between sends.",
+        "Premium is the fullest plan: everything in Pro, three times the <code>.check</code> allowance, twice the bulk-send size — and two commands that exist nowhere else: <code>.save</code> and <code>.clone</code>.",
     ),
     "help_btn_all": (
         "📖 Показати весь функціонал",
@@ -621,6 +652,11 @@ _TR: dict[str, tuple[str, str, str]] = {
         "✅ Оплата получена. Тариф <b>{title}</b> активирован!",
         "✅ Payment received. Tariff <b>{title}</b> is active!",
     ),
+    "sub_ready": (
+        "Усе готово — тариф уже діє.",
+        "Всё готово — тариф уже действует.",
+        "All set — your plan is live.",
+    ),
     "sub_connect_hint": (
         "Підключіть акаунт: ⚙️ Налаштування → 🔗 Прив'язати акаунт.",
         "Подключите аккаунт: ⚙️ Настройки → 🔗 Привязать аккаунт.",
@@ -628,6 +664,111 @@ _TR: dict[str, tuple[str, str, str]] = {
     ),
     "sub_stars_title": ("Підписка {title}", "Подписка {title}", "{title} subscription"),
     "sub_stars_desc": ("Тариф {title} на {days} днів", "Тариф {title} на {days} дней", "{title} tariff for {days} days"),
+    # --- card payments (WayForPay, UAH) ---
+    "sub_card_unavailable": (
+        "Оплата карткою тимчасово недоступна",
+        "Оплата картой временно недоступна",
+        "Card payment is temporarily unavailable",
+    ),
+    "sub_pay_card_btn": ("💳 Сплатити карткою", "💳 Оплатить картой", "💳 Pay by card"),
+    "sub_card_prompt": (
+        "💳 Оплата тарифу <b>{title}</b> — {amount} ₴.\n"
+        "Натисніть кнопку нижче, щоб перейти на захищену сторінку оплати.\n\n"
+        "🔄 Підписка продовжуватиметься автоматично кожні {days} днів. "
+        "Скасувати можна будь-коли в ⚙️ Налаштуваннях.",
+        "💳 Оплата тарифа <b>{title}</b> — {amount} ₴.\n"
+        "Нажмите кнопку ниже, чтобы перейти на защищённую страницу оплаты.\n\n"
+        "🔄 Подписка будет продлеваться автоматически каждые {days} дней. "
+        "Отменить можно в любой момент в ⚙️ Настройках.",
+        "💳 Payment for <b>{title}</b> — {amount} UAH.\n"
+        "Tap the button below to open the secure payment page.\n\n"
+        "🔄 The subscription renews automatically every {days} days. "
+        "You can cancel any time in ⚙️ Settings.",
+    ),
+    "sub_card_prompt_once": (
+        "💳 Оплата тарифу <b>{title}</b> — {amount} ₴.\n"
+        "Натисніть кнопку нижче, щоб перейти на захищену сторінку оплати.\n\n"
+        "Це разовий платіж — автоматичного продовження не буде.",
+        "💳 Оплата тарифа <b>{title}</b> — {amount} ₴.\n"
+        "Нажмите кнопку ниже, чтобы перейти на защищённую страницу оплаты.\n\n"
+        "Это разовый платёж — автоматического продления не будет.",
+        "💳 Payment for <b>{title}</b> — {amount} UAH.\n"
+        "Tap the button below to open the secure payment page.\n\n"
+        "This is a one-off charge — it will not renew automatically.",
+    ),
+    # --- auto-renewal, managed from settings ---
+    "set_autorenew_on": (
+        "🔄 Автопродовження: увімкнено",
+        "🔄 Автопродление: включено",
+        "🔄 Auto-renewal: on",
+    ),
+    "set_autorenew_btn_cancel": (
+        "🔄 Скасувати автопродовження",
+        "🔄 Отменить автопродление",
+        "🔄 Cancel auto-renewal",
+    ),
+    "set_autorenew_cancelled": (
+        "🔄 Автопродовження скасовано. Підписка діятиме до {date}, далі списань не буде.",
+        "🔄 Автопродление отменено. Подписка будет действовать до {date}, дальше списаний не будет.",
+        "🔄 Auto-renewal cancelled. The subscription stays active until {date}, with no further charges.",
+    ),
+    "set_autorenew_cancel_failed": (
+        "Не вдалося скасувати автопродовження. Спробуйте ще раз або напишіть у підтримку.",
+        "Не удалось отменить автопродление. Попробуйте ещё раз или напишите в поддержку.",
+        "Could not cancel auto-renewal. Try again or contact support.",
+    ),
+    # --- the payment page itself (pay_web) ---
+    "pay_title": ("Оплата підписки", "Оплата подписки", "Subscription payment"),
+    "pay_product": (
+        "Тариф {title} — {days} днів",
+        "Тариф {title} — {days} дней",
+        "{title} tariff — {days} days",
+    ),
+    "pay_button": ("Сплатити карткою", "Оплатить картой", "Pay by card"),
+    "pay_autorenew_note": (
+        "Підписка продовжуватиметься автоматично. Скасувати можна будь-коли в боті.",
+        "Подписка будет продлеваться автоматически. Отменить можно в любой момент в боте.",
+        "The subscription renews automatically. You can cancel any time in the bot.",
+    ),
+    "pay_once_note": (
+        "Разовий платіж, без автоматичного продовження.",
+        "Разовый платёж, без автоматического продления.",
+        "A one-off charge, with no automatic renewal.",
+    ),
+    "pay_expired_title": ("Посилання застаріло", "Ссылка устарела", "This link is no longer valid"),
+    "pay_expired_text": (
+        "Поверніться в бот і почніть оплату заново.",
+        "Вернитесь в бот и начните оплату заново.",
+        "Go back to the bot and start the payment again.",
+    ),
+    "pay_already_title": ("Уже оплачено", "Уже оплачено", "Already paid"),
+    "pay_already_text": (
+        "Ця підписка вже активна — платити ще раз не потрібно.",
+        "Эта подписка уже активна — платить ещё раз не нужно.",
+        "This subscription is already active — no need to pay again.",
+    ),
+    "pay_done_title": ("Дякуємо!", "Спасибо!", "Thank you!"),
+    "pay_done_text": (
+        "Повертайтеся в бот — підтвердження прийде туди, щойно банк підтвердить платіж.",
+        "Возвращайтесь в бот — подтверждение придёт туда, как только банк подтвердит платёж.",
+        "Head back to the bot — confirmation arrives there as soon as the bank confirms the payment.",
+    ),
+    "pay_refunded": (
+        "↩️ Кошти за тариф <b>{title}</b> повернуто, підписку зупинено.\n"
+        "Якщо це помилка — напишіть у підтримку.",
+        "↩️ Средства за тариф <b>{title}</b> возвращены, подписка остановлена.\n"
+        "Если это ошибка — напишите в поддержку.",
+        "↩️ Your payment for <b>{title}</b> was refunded and the subscription has stopped.\n"
+        "If that looks wrong, contact support.",
+    ),
+    "pay_renew_failed": (
+        "⚠️ Не вдалося продовжити тариф <b>{title}</b> — банк відхилив списання.\n"
+        "Спробу буде повторено завтра. Перевірте баланс або оплатіть вручну: 💳 Тарифи.",
+        "⚠️ Не удалось продлить тариф <b>{title}</b> — банк отклонил списание.\n"
+        "Попытка повторится завтра. Проверьте баланс или оплатите вручную: 💳 Тарифы.",
+        "⚠️ Could not renew <b>{title}</b> — the bank declined the charge.\n"
+        "It will be retried tomorrow. Check your balance or pay manually: 💳 Plans.",
+    ),
     # settings — profile
     "set_title": ("⚙️ <b>Налаштування</b>", "⚙️ <b>Настройки</b>", "⚙️ <b>Settings</b>"),
     "set_joined": ("📅 В боті з: {date}", "📅 В боте с: {date}", "📅 Joined: {date}"),
@@ -659,6 +800,15 @@ _TR: dict[str, tuple[str, str, str]] = {
     "feat_check": (".check — перевірка", ".check — проверка", ".check — lookup"),
     "feat_viewonce_photo": ("👁 Одноразові фото", "👁 Одноразовые фото", "👁 One-time photos"),
     "feat_viewonce_voice": ("🎙 Одноразові голосові", "🎙 Одноразовые голосовые", "🎙 One-time voice"),
+    "feat_viewonce_video": ("🎥 Одноразові відео", "🎥 Одноразовые видео", "🎥 One-time videos"),
+    "feat_send": (".send — розсилка", ".send — рассылка", ".send — bulk post"),
+    "feat_mute": ("🔇 .mute — тиша", "🔇 .mute — тишина", "🔇 .mute — silence"),
+    "btn_delete_notice": ("🗑 Видалити", "🗑 Удалить", "🗑 Delete"),
+    "notice_delete_failed": (
+        "Telegram не дає видалити повідомлення, старше за 48 годин.",
+        "Telegram не даёт удалить сообщение старше 48 часов.",
+        "Telegram will not delete a message older than 48 hours.",
+    ),
     "lang_title": (
         "🌐 Оберіть мову інтерфейсу.\n\n<i>Telegram не завжди коректно передає мову боту — оберіть вручну.</i>",
         "🌐 Выберите язык интерфейса.\n\n<i>Telegram не всегда корректно передаёт язык боту — выберите вручную.</i>",
@@ -794,6 +944,160 @@ _TR: dict[str, tuple[str, str, str]] = {
         "❌ Количество должно быть от 1 до {max}: .send 10 текст",
         "❌ Count must be between 1 and {max}: .send 10 text",
     ),
+    # --- recordings, managed from settings ---
+    "rec_menu_title": (
+        "💾 <b>Запис чатів</b>\n\nЗаписані повідомлення приходять сюди файлом.",
+        "💾 <b>Запись чатов</b>\n\nЗаписанные сообщения приходят сюда файлом.",
+        "💾 <b>Chat recording</b>\n\nRecorded messages arrive here as a file.",
+    ),
+    "rec_menu_none": (
+        "Зараз нічого не записується.",
+        "Сейчас ничего не записывается.",
+        "Nothing is being recorded right now.",
+    ),
+    "rec_btn_open": ("💾 Запис чатів", "💾 Запись чатов", "💾 Chat recording"),
+    "rec_btn_pick": ("➕ Обрати контакт", "➕ Выбрать контакт", "➕ Pick a contact"),
+    "rec_btn_stop": ("⏹ {chat}", "⏹ {chat}", "⏹ {chat}"),
+    "rec_pick_prompt": (
+        "Оберіть, чий чат записувати — кнопкою нижче.",
+        "Выберите, чей чат записывать — кнопкой ниже.",
+        "Choose whose chat to record, with the button below.",
+    ),
+    "rec_pick_button": ("👤 Обрати контакт", "👤 Выбрать контакт", "👤 Pick a contact"),
+    "rec_pick_cancel": ("Скасувати", "Отменить", "Cancel"),
+    "rec_pick_cancelled": (
+        "Скасовано.",
+        "Отменено.",
+        "Cancelled.",
+    ),
+    "rec_started_for": (
+        "💾 Записую чат з {chat}. Зупинити — тут або командою .unsave у самому чаті.",
+        "💾 Записываю чат с {chat}. Остановить — здесь или командой .unsave в самом чате.",
+        "💾 Recording the chat with {chat}. Stop it here, or with .unsave in the chat itself.",
+    ),
+    "rec_already_for": (
+        "Цей чат уже записується.",
+        "Этот чат уже записывается.",
+        "That chat is already being recorded.",
+    ),
+    "rec_stopped_for": (
+        "📁 Запис зупинено, {count} повідомлень.",
+        "📁 Запись остановлена, {count} сообщений.",
+        "📁 Recording stopped, {count} messages.",
+    ),
+    "rec_stopped_empty": (
+        "📁 Запис зупинено. Нічого не записалося — у чаті не було повідомлень.",
+        "📁 Запись остановлена. Ничего не записалось — в чате не было сообщений.",
+        "📁 Recording stopped. Nothing was captured — there were no messages.",
+    ),
+    "rec_needs_tariff": (
+        "Запис чатів доступний на тарифі Premium.",
+        "Запись чатов доступна на тарифе Premium.",
+        "Chat recording is part of the Premium plan.",
+    ),
+    "rec_needs_account": (
+        "Спершу підключіть акаунт — записувати нічого.",
+        "Сначала подключите аккаунт — записывать нечего.",
+        "Connect an account first — there is nothing to record.",
+    ),
+    # --- .clone / .stopc ---
+    "ub_clone_started": (
+        "🪞 Клоную {user}. Зупинити — .stopc",
+        "🪞 Клонирую {user}. Остановить — .stopc",
+        "🪞 Cloning {user}. Stop with .stopc",
+    ),
+    "ub_clone_stopped": (
+        "🛑 Клонування {user} зупинено.",
+        "🛑 Клонирование {user} остановлено.",
+        "🛑 Stopped cloning {user}.",
+    ),
+    "ub_clone_not_running": (
+        "Цей користувач не клонується.",
+        "Этот пользователь не клонируется.",
+        "That user is not being cloned.",
+    ),
+    "ub_clone_no_target": (
+        "Дайте відповідь на повідомлення того, кого треба клонувати.",
+        "Ответьте на сообщение того, кого нужно клонировать.",
+        "Reply to a message from the person you want to clone.",
+    ),
+    "ub_clone_flood_stopped": (
+        "🛑 Клонування зупинено: Telegram обмежив надсилання.",
+        "🛑 Клонирование остановлено: Telegram ограничил отправку.",
+        "🛑 Cloning stopped: Telegram rate-limited the sending.",
+    ),
+    "feat_clone": ("🪞 .clone — клонування", "🪞 .clone — клонирование", "🪞 .clone — mirroring"),
+    # --- .save / .unsave ---
+    "rec_started": (
+        "💾 Запис чату почато. Зупинити — .unsave",
+        "💾 Запись чата начата. Остановить — .unsave",
+        "💾 Recording this chat. Stop with .unsave",
+    ),
+    "rec_already": (
+        "💾 Цей чат уже записується.",
+        "💾 Этот чат уже записывается.",
+        "💾 This chat is already being recorded.",
+    ),
+    "rec_not_running": (
+        "Цей чат не записується.",
+        "Этот чат не записывается.",
+        "This chat is not being recorded.",
+    ),
+    "rec_stopped": (
+        "📁 Запис зупинено, {count} повідомлень. Файл — у боті.",
+        "📁 Запись остановлена, {count} сообщений. Файл — в боте.",
+        "📁 Recording stopped, {count} messages. The file is in the bot.",
+    ),
+    "rec_see_bot": (
+        "Повідомлення — у чаті з ботом.",
+        "Сообщение — в чате с ботом.",
+        "The message is in your chat with the bot.",
+    ),
+    "rec_undelivered": (
+        "📁 Запис зупинено, {count} повідомлень. Файл не вдалося надіслати — "
+        "відкрийте чат з менеджер-ботом і спробуйте ще раз.",
+        "📁 Запись остановлена, {count} сообщений. Файл не удалось отправить — "
+        "откройте чат с менеджер-ботом и попробуйте снова.",
+        "📁 Recording stopped, {count} messages. The file could not be sent — "
+        "open the chat with the manager bot and try again.",
+    ),
+    "rec_ready": (
+        "📁 Архів чату {chat} — {count} повідомлень.",
+        "📁 Архив чата {chat} — {count} сообщений.",
+        "📁 Archive of {chat} — {count} messages.",
+    ),
+    "rec_archive_header": ("Архів чату: {chat}", "Архив чата: {chat}", "Chat archive: {chat}"),
+    "rec_me": ("Я", "Я", "Me"),
+    "feat_record": ("💾 .save — запис чату", "💾 .save — запись чата", "💾 .save — chat recording"),
+    "ub_send_hourly": (
+        "⏳ Ліміт: {limit} розсилок на годину. Наступна — через {minutes} хв.",
+        "⏳ Лимит: {limit} рассылок в час. Следующая — через {minutes} мин.",
+        "⏳ Limit: {limit} broadcasts per hour. Next one in {minutes} min.",
+    ),
+    # --- .mute / .unmute ---
+    "ub_muted_for": (
+        "🔇 {user} — тиша на {duration}. Повідомлення видалятимуться.",
+        "🔇 {user} — тишина на {duration}. Сообщения будут удаляться.",
+        "🔇 {user} muted for {duration}. Messages will be deleted.",
+    ),
+    "ub_muted_forever": (
+        "🔇 {user} — тиша до .unmute. Повідомлення видалятимуться.",
+        "🔇 {user} — тишина до .unmute. Сообщения будут удаляться.",
+        "🔇 {user} muted until .unmute. Messages will be deleted.",
+    ),
+    "ub_unmuted": ("🔊 {user} — знову чути.", "🔊 {user} — снова слышно.", "🔊 {user} unmuted."),
+    "ub_not_muted": (
+        "Цей користувач не в тиші.",
+        "Этот пользователь не в тишине.",
+        "That user is not muted.",
+    ),
+    "ub_mute_no_target": (
+        "Дайте відповідь на повідомлення того, кого треба заглушити.",
+        "Ответьте на сообщение того, кого нужно заглушить.",
+        "Reply to a message from the person you want to mute.",
+    ),
+    "dur_hours": ("{n} год", "{n} ч", "{n}h"),
+    "dur_minutes": ("{n} хв", "{n} мин", "{n}m"),
     "ub_send_cooldown": (
         "⏳ Зачекайте ще {minutes} хв перед наступним .send.",
         "⏳ Подождите ещё {minutes} мин перед следующим .send.",
@@ -824,6 +1128,7 @@ _TR: dict[str, tuple[str, str, str]] = {
     "kind_video": ("відео", "видео", "video"),
     "kind_media": ("медіа", "медиа", "media"),
     "kind_document": ("файл", "файл", "file"),
+    "kind_sticker": ("стікер", "стикер", "sticker"),
     "kind_location": ("локація", "локация", "location"),
     "btn_ignore_chat": ("🚫 Ігнорувати цей чат", "🚫 Игнорировать этот чат", "🚫 Ignore this chat"),
     "unknown": ("невідомо", "неизвестно", "unknown"),
@@ -952,13 +1257,13 @@ _FEATURES: dict[str, tuple[list[str], list[str], list[str]]] = {
          ".check — 5/month", "Auto-save of deleted/edited messages"],
     ),
     "pro": (
-        ["Усе зі Standard", ".check — 10/місяць", "Автовідповідач (налаштовується)", ".send — масове надсилання (до 50 повідомлень, раз на 10 хв)"],
-        ["Всё из Standard", ".check — 10/месяц", "Автоответчик (настраивается)", ".send — массовая рассылка (до 50 сообщений, раз в 10 мин)"],
-        ["Everything in Standard", ".check — 10/month", "Autoresponder (configurable)", ".send — bulk send (up to 50 messages, once per 10 min)"],
+        ["Усе зі Standard", ".check — 10/місяць", "Автовідповідач (налаштовується)", ".send — до 50 копій, раз на 5 хв (5 разів на годину)", ".mute — заглушити набридливого"],
+        ["Всё из Standard", ".check — 10/месяц", "Автоответчик (настраивается)", ".send — до 50 копий, раз в 5 мин (5 раз в час)", ".mute — заглушить надоедливого"],
+        ["Everything in Standard", ".check — 10/month", "Autoresponder (configurable)", ".send — up to 50 copies, once per 5 min (5 per hour)", ".mute — silence someone"],
     ),
     "premium": (
-        ["Усе з Pro", ".check — 30/місяць", ".send — до 100 повідомлень, раз на 2 хв", "Автовідповідач (налаштовується)"],
-        ["Всё из Pro", ".check — 30/месяц", ".send — до 100 сообщений, раз в 2 мин", "Автоответчик (настраивается)"],
-        ["Everything in Pro", ".check — 30/month", ".send — up to 100 messages, once per 2 min", "Autoresponder (configurable)"],
+        ["Усе з Pro", ".check — 30/місяць", ".send — до 100 копій, раз на 2 хв (10 разів на годину)", "Автовідповідач (налаштовується)", ".mute — заглушити набридливого", ".save — запис чату у файл", ".clone — клонування повідомлень"],
+        ["Всё из Pro", ".check — 30/месяц", ".send — до 100 копий, раз в 2 мин (10 раз в час)", "Автоответчик (настраивается)", ".mute — заглушить надоедливого", ".save — запись чата в файл", ".clone — клонирование сообщений"],
+        ["Everything in Pro", ".check — 30/month", ".send — up to 100 copies, once per 2 min (10 per hour)", "Autoresponder (configurable)", ".mute — silence someone", ".save — record a chat to a file", ".clone — mirror someone's messages"],
     ),
 }

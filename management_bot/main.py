@@ -13,6 +13,7 @@ from aiogram.enums import ParseMode
 from connect_web.server import connect_server
 from management_bot.config import settings
 from management_bot.connect_notices import run_expiry_notices
+from management_bot.payment import build_wayforpay
 from management_bot.handlers import (
     admin,
     connect,
@@ -57,8 +58,15 @@ async def run() -> None:
     # keypad flow no connect tokens are ever issued, so the sweep would just
     # poll an empty table forever.
     sweeper = None
-    if settings.webapp_api_id and settings.webapp_api_hash:
+    connect_ready = bool(settings.webapp_api_id and settings.webapp_api_hash)
+    if connect_ready:
         sweeper = asyncio.create_task(run_expiry_notices(bot))
+
+    # The same origin serves the Mini App and the card-payment pages, so it
+    # comes up if EITHER is configured — a deployment selling by card but
+    # still on the old in-chat login flow needs this server just as much.
+    wayforpay = build_wayforpay()
+    if connect_ready or wayforpay is not None:
         # Started eagerly here, not lazily on the first "Прив'язати акаунт"
         # tap. A token (and its chat button) can outlive a restart just fine —
         # it's a DB row with a TTL — but the HTTP server behind that button
@@ -76,6 +84,9 @@ async def run() -> None:
                 ngrok_authtoken=settings.ngrok_authtoken,
                 ngrok_domain=settings.ngrok_domain,
                 manager_bot_username=settings.manager_bot_username,
+                wayforpay=wayforpay,
+                bot_username=settings.management_bot_username,
+                support_contact=settings.support_contact,
                 public_url=settings.connect_public_url,
                 host=settings.connect_web_host,
             )

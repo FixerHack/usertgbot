@@ -70,6 +70,21 @@ class Subscription(Base):
     status: Mapped[SubscriptionStatus] = mapped_column(default=SubscriptionStatus.PENDING)
     payment_provider: Mapped[str] = mapped_column()
     external_invoice_id: Mapped[str | None] = mapped_column(default=None)
+    # WayForPay addresses a subscription by the order reference of its FIRST
+    # successful payment — renewals, suspension and cancellation all key off
+    # this one string, so it is unique and indexed rather than folded into
+    # external_invoice_id (which crypto already uses for its own invoice id).
+    order_reference: Mapped[str | None] = mapped_column(unique=True, index=True, default=None)
+    # Gateway-driven renewal is ON. The schedule itself lives at WayForPay,
+    # not here: this flag only records what we asked for, so the UI can offer
+    # to cancel it and so a renewal callback knows to extend rather than
+    # start a new period.
+    auto_renew: Mapped[bool] = mapped_column(default=False, server_default="false")
+    # What the card is charged, in whole UAH. Recorded at creation so the
+    # payment page renders the same figure the user was quoted even if the
+    # tariff price or their referral discount changes in between, and so the
+    # callback can check the gateway reports the amount we actually asked for.
+    amount_uah: Mapped[int | None] = mapped_column(default=None)
     # How many days this period covers once activated. Set at creation time
     # (from the duration the user picked) and read back by `activate()` —
     # a Stars invoice payload can't carry it, so it has to live on the row.
@@ -80,6 +95,43 @@ class Subscription(Base):
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
     user: Mapped["User"] = relationship(back_populates="subscriptions")
+
+
+class PaymentEvent(Base):
+    """One charge reported by a payment gateway, recorded before it is acted on.
+
+    Exists for idempotency, not for reporting. WayForPay re-delivers a callback
+    until it gets a signed "accept" back, so the same successful charge can
+    arrive several times; without a durable record of what was already applied,
+    a retry would extend the subscription a second time. The unique constraint
+    is what actually enforces that — checking-then-inserting would still race
+    two concurrent deliveries.
+    """
+
+    __tablename__ = "payment_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    provider: Mapped[str] = mapped_column(index=True)
+    order_reference: Mapped[str] = mapped_column(index=True)
+    # Identifies the individual charge within an order reference: a regular
+    # payment reuses its order reference for every renewal, so these two
+    # together are what make a charge unique.
+    auth_code: Mapped[str] = mapped_column(default="")
+    processing_date: Mapped[str] = mapped_column(default="")
+    amount: Mapped[float] = mapped_column(default=0)
+    currency: Mapped[str] = mapped_column(default="")
+    status: Mapped[str] = mapped_column(default="")
+    subscription_id: Mapped[int | None] = mapped_column(
+        ForeignKey("subscriptions.id", ondelete="SET NULL"), default=None
+    )
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint(
+            "provider", "order_reference", "auth_code", "processing_date",
+            name="uq_payment_event_charge",
+        ),
+    )
 
 
 class ReferralLink(Base):
@@ -163,6 +215,10 @@ class UserSettings(Base):
     # bought per user, so cooling down per-session would let someone with two
     # connected phone numbers just alternate between them to dodge it.
     last_send_at: Mapped[datetime | None] = mapped_column(default=None)
+    # ISO timestamps of recent .send runs, pruned to the rate-limit window.
+    # The cooldown only needs the last one; an hourly cap needs to count them,
+    # and a list of at most a handful of strings is cheaper than a table.
+    send_history: Mapped[Any | None] = mapped_column(JSON, default=None)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
@@ -255,6 +311,95 @@ class ConnectToken(Base):
     # the bot restarted mid-attempt, and the user would just be left waiting.
     expiry_notified_at: Mapped[datetime | None] = mapped_column(default=None)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class ClonedUser(Base):
+    """Someone whose messages are echoed straight back at them.
+
+    Same shape as MutedUser and for the same reason: a target inside one chat.
+    Persisted rather than kept in memory so `.clone` means what it says —
+    "until .stopc" and not "until the next deploy".
+    """
+
+    __tablename__ = "cloned_users"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    owner_user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    chat_id: Mapped[int] = mapped_column(BigInteger)
+    target_user_id: Mapped[int] = mapped_column(BigInteger)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("owner_user_id", "chat_id", "target_user_id", name="uq_clone_target"),
+    )
+
+
+class ChatRecording(Base):
+    """One `.save` … `.unsave` span in a chat.
+
+    A recording is a row rather than a flag on the chat so the same chat can be
+    recorded again later without the two archives running together, and so an
+    unfinished one is visible after a restart instead of silently lost.
+    """
+
+    __tablename__ = "chat_recordings"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    owner_user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    chat_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    chat_title: Mapped[str | None] = mapped_column(default=None)
+    started_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    # NULL while it is still running — that is what "active" means here.
+    stopped_at: Mapped[datetime | None] = mapped_column(default=None)
+
+    messages: Mapped[list["RecordedMessage"]] = relationship(
+        back_populates="recording", cascade="all, delete-orphan"
+    )
+
+
+class RecordedMessage(Base):
+    """One line of an archive.
+
+    Text and a label for anything that is not text — a recording is a
+    transcript, not a backup. Storing the media would turn a chat archive into
+    an unbounded pile of blobs for a feature whose output is a .txt file.
+    """
+
+    __tablename__ = "recorded_messages"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    recording_id: Mapped[int] = mapped_column(
+        ForeignKey("chat_recordings.id", ondelete="CASCADE"), index=True
+    )
+    sent_at: Mapped[datetime] = mapped_column()
+    sender: Mapped[str] = mapped_column()      # display label, resolved once at capture
+    is_outgoing: Mapped[bool] = mapped_column(default=False)
+    text: Mapped[str] = mapped_column(default="")
+
+    recording: Mapped["ChatRecording"] = relationship(back_populates="messages")
+
+
+class MutedUser(Base):
+    """Someone the owner has silenced in one chat.
+
+    Scoped to a chat rather than globally: muting a person in a group has
+    nothing to do with wanting them gone from a private conversation, and the
+    reverse surprises people. `until` NULL means until `.unmute` — the rows
+    are the record, and an expired one is simply ignored rather than swept.
+    """
+
+    __tablename__ = "muted_users"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    owner_user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    chat_id: Mapped[int] = mapped_column(BigInteger)
+    target_user_id: Mapped[int] = mapped_column(BigInteger)
+    until: Mapped[datetime | None] = mapped_column(default=None)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("owner_user_id", "chat_id", "target_user_id", name="uq_mute_target"),
+    )
 
 
 class IgnoredChat(Base):

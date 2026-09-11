@@ -43,6 +43,8 @@ def register(client: TelegramClient, ctx: WorkerContext) -> None:
                 return
             if kind == "voice" and not features.viewonce_voice:
                 return
+            if kind == "video" and not features.viewonce_video:
+                return
         try:
             await _forward(client, event, ctx, kind)
         except Exception:
@@ -63,5 +65,9 @@ async def _forward(client: TelegramClient, event: events.NewMessage.Event, ctx: 
     elif kind == "photo":
         await notify_owner(ctx, caption, photo=data)
     else:
-        # fall back to a plain note for video/other — still better than losing it
-        await notify_owner(ctx, caption)
+        # Video and video notes (кружки). Sent as a normal video rather than a
+        # round one: sendVideoNote takes no caption, and losing "who sent this"
+        # to keep the circle shape is a bad trade. The bytes were already
+        # downloaded here — the old code threw them away and sent the header
+        # alone, which is what arriving as a bare "Одноразове відео" was.
+        await notify_owner(ctx, caption, video=data)

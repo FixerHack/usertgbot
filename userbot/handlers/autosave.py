@@ -30,6 +30,7 @@ from shared.i18n import t
 from shared.settings_schema import Features
 from userbot import entities, formatting
 from userbot.context import WorkerContext
+from userbot.handlers.mute import is_muted
 from userbot.notify import notify_owner
 from userbot.storage import load_features
 
@@ -53,14 +54,24 @@ def _truncate_utf8(s: str, max_bytes: int) -> str:
     return raw[:max_bytes].decode("utf-8", errors="ignore")
 
 
-def _ignore_chat_kb(chat_id: int, chat_title: str | None, lang: str) -> InlineKeyboardMarkup:
+def _ignore_chat_kb(
+    chat_id: int, chat_title: str | None, lang: str, *, also_delete: int | None = None
+) -> InlineKeyboardMarkup:
+    """`also_delete` is the id of a companion message posted alongside this
+    one — a sticker, which cannot carry the notice as a caption. Deleting the
+    notice has to take its file with it, or the button tidies half of what the
+    owner is looking at."""
     safe_title = _truncate_utf8((chat_title or "").replace(":", " ").strip(), _TITLE_BYTE_BUDGET)
+    delete_data = "notice:del" if also_delete is None else f"notice:del:{also_delete}"
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
                     text=t(lang, "btn_ignore_chat"), callback_data=f"ignore_chat:{chat_id}:{safe_title}"
-                )
+                ),
+                # Recovered messages pile up fast. Without this the only way
+                # to clear one is Telegram's own delete menu, two taps away.
+                InlineKeyboardButton(text=t(lang, "btn_delete_notice"), callback_data=delete_data),
             ]
         ]
     )
@@ -75,14 +86,18 @@ async def _capture_media(client, ctx, event) -> tuple[bytes | None, str | None, 
     as a plain document — loses native rendering (a GIF forwarded as a
     document doesn't autoplay, say) but still recovers the actual content,
     which is the point."""
-    if event.photo:
+    # Stickers first: a video sticker (.webm) also answers to `event.video`,
+    # and classifying one as a video would send it back as a playable clip.
+    if event.sticker:
+        kind = "sticker"
+    elif event.photo:
         kind = "photo"
     elif event.voice:
         kind = "voice"
     elif event.video or event.video_note:
         kind = "video"
     elif event.file is not None:
-        kind = "document"  # documents, GIFs, stickers, audio, etc.
+        kind = "document"  # documents, GIFs, audio, etc.
     else:
         return None, None, None
 
@@ -126,6 +141,12 @@ def _capture_location(event) -> tuple[float, float] | None:
 def register(client: TelegramClient, ctx: WorkerContext) -> None:
     @client.on(events.NewMessage(incoming=True))
     async def remember(event: events.NewMessage.Event) -> None:
+        # Muting someone means not wanting to see what they write. Their
+        # messages get deleted (by us), and anything remembered here would
+        # come straight back as a "deleted message" notice — the opposite of
+        # what was asked for. Never cached, so there is nothing to restore.
+        if event.sender_id and is_muted(ctx, event.chat_id, event.sender_id):
+            return
         media, media_kind, media_filename = await _capture_media(client, ctx, event)
         await ctx.cache.remember(
             chat_id=event.chat_id,
@@ -249,6 +270,25 @@ async def _handle(
         await notify_owner(ctx, notice, voice=media, reply_markup=kb)
     elif media_kind == "video":
         await notify_owner(ctx, notice, video=media, reply_markup=kb)
+    elif media_kind == "sticker":
+        # Two messages, on purpose. Telegram turns a .webp/.tgs/.webm document
+        # back into a sticker, and stickers cannot carry a caption — so the
+        # "who deleted what" line was being dropped on the floor, leaving the
+        # owner with a bare image and no idea who sent it.
+        #
+        # File first, notice second: that is the order captioned media already
+        # reads in (picture above, words below), and it means the notice can
+        # carry the file's id so one tap on 🗑 clears both. The other way round
+        # left the sticker stranded once the notice was deleted.
+        sent = await notify_owner(ctx, "", document=media, document_filename=media_filename or "sticker.webp")
+        await notify_owner(
+            ctx,
+            notice,
+            reply_markup=_ignore_chat_kb(
+                chat_id, chat_title, ctx.owner_lang,
+                also_delete=getattr(sent, "message_id", None),
+            ),
+        )
     elif media_kind == "document":
         await notify_owner(ctx, notice, document=media, document_filename=media_filename or "file", reply_markup=kb)
     elif location is not None:

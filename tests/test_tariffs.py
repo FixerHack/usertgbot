@@ -83,13 +83,31 @@ def test_an_unavailable_plan_still_grants_nothing():
 
 def test_send_cooldown_and_limits_per_tariff():
     pro, premium = get_plan(Tariff.PRO), get_plan(Tariff.PREMIUM)
-    assert pro.send_cooldown_seconds == 10 * 60
+    assert pro.send_cooldown_seconds == 5 * 60
     assert pro.send_max_count == 50
+    assert pro.send_max_per_hour == 5
     # Premium is faster and bigger than Pro
     assert premium.send_cooldown_seconds == 2 * 60
     assert premium.send_max_count == 100
+    assert premium.send_max_per_hour == 10
     assert premium.send_cooldown_seconds < pro.send_cooldown_seconds
     assert premium.send_max_count > pro.send_max_count
+    assert premium.send_max_per_hour > pro.send_max_per_hour
+
+
+def test_the_hourly_cap_is_the_binding_limit_not_the_cooldown():
+    """The cooldown paces a burst; the hourly cap is what actually bounds the
+    day. If the cooldown alone already allowed fewer runs than the cap, the
+    cap would be decoration."""
+    for plan in (get_plan(Tariff.PRO), get_plan(Tariff.PREMIUM)):
+        by_cooldown = 3600 // plan.send_cooldown_seconds
+        assert plan.send_max_per_hour < by_cooldown, plan.title
+
+
+def test_mute_is_a_paid_command():
+    assert not tariff_grants_command(Tariff.STANDARD, "mute")
+    assert tariff_grants_command(Tariff.PRO, "mute")
+    assert tariff_grants_command(Tariff.PREMIUM, "unmute")
 
 
 def test_durations_defined():

@@ -12,6 +12,9 @@ class ManagementBotSettings(BaseSettings):
     encryption_key: str
     # shown to users; optional
     manager_bot_username: str | None = None   # e.g. "personmanbot" (no @)
+    # This bot's own @username — used to send a payer back here from the
+    # payment page, which lives on a plain web origin with no Telegram context.
+    management_bot_username: str | None = None
     support_contact: str = "@your_support"     # manager/support handle
 
     # admin panel
@@ -50,6 +53,29 @@ class ManagementBotSettings(BaseSettings):
     crypto_pay_token: str | None = None        # @CryptoBot Crypto Pay API token
     crypto_pay_testnet: bool = False
     crypto_pay_fiat: str = "USD"
+
+    # WayForPay (bank cards, UAH). All three unset = the hryvnia option is
+    # hidden and Stars/crypto behave exactly as before, so an unconfigured
+    # deployment loses nothing.
+    #
+    # The domain is covered by the purchase signature but is NOT checked
+    # against the site registered on the merchant — tested against the live
+    # gateway with the real merchant on 2026-09-05: the registered domain, the
+    # domain actually serving the page, and a deliberately unrelated one were
+    # all accepted. Set it to the registered site anyway: it costs nothing and
+    # stays correct if the gateway ever starts enforcing this.
+    wayforpay_merchant_account: str | None = None
+    wayforpay_secret_key: str | None = None
+    wayforpay_domain: str | None = None
+    # A THIRD value, distinct from the secret key: the cabinet issues both.
+    # Signatures use the key; regularApi (cancel a standing mandate)
+    # authenticates with this. Without it cancellation fails while payments
+    # keep working, which is the confusing half-broken state to avoid.
+    wayforpay_merchant_password: str | None = None
+
+    @property
+    def wayforpay_configured(self) -> bool:
+        return bool(self.wayforpay_merchant_account and self.wayforpay_secret_key and self.wayforpay_domain)
 
     @property
     def admin_id_set(self) -> set[int]:

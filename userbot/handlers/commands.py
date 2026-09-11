@@ -17,7 +17,7 @@ from telethon import TelegramClient, errors, events
 from telethon.tl.functions.contacts import BlockRequest
 from telethon.tl.functions.users import GetFullUserRequest
 
-from db.queries import consume_check, mark_send_used, peek_send_cooldown
+from db.queries import consume_check, mark_send_used, peek_send_allowance
 from db.session import get_session
 from shared.i18n import t
 from shared.settings_schema import Features, MeCard
@@ -98,12 +98,15 @@ def register(client: TelegramClient, ctx: WorkerContext) -> None:
         if not gate:
             return
         if not await _feature_enabled(ctx, "check"):
-            await event.reply(t(ctx.owner_lang, "ub_feature_disabled"))
+            await clear_command(event)
             return
-        await _do_check(event, ctx, gate)
+        await _do_check(client, event, ctx, gate)
 
     @client.on(events.NewMessage(outgoing=True, pattern=SEND_RE))
     async def handle_send(event: events.NewMessage.Event) -> None:
+        if not await _feature_enabled(ctx, "send"):
+            await clear_command(event)
+            return
         gate = await _gate(event, ctx, "send")
         if gate is None:
             return
@@ -208,19 +211,38 @@ async def _do_ban(client: TelegramClient, event: events.NewMessage.Event) -> Non
     await client.delete_dialog(await event.get_chat())
 
 
-async def _do_check(event: events.NewMessage.Event, ctx: WorkerContext, gate) -> None:
+async def _do_check(client: TelegramClient, event: events.NewMessage.Event, ctx: WorkerContext, gate) -> None:
     quota = get_plan(gate.tariff).check_quota
+    chat_id = event.chat_id
+    # Cleared before anything else. `.check` is typed in a chat with the person
+    # being looked up: leaving it there tells them they were checked, and the
+    # quota running out is no reason to make that exception.
+    await clear_command(event)
+
     async with get_session() as db:
         result = await consume_check(db, ctx.owner_user_id, quota)
         await db.commit()
     if not result.allowed:
-        await event.reply(t(ctx.owner_lang, "ub_check_limit", used=result.used, quota=quota))
+        await _notice(client, chat_id, t(ctx.owner_lang, "ub_check_limit", used=result.used, quota=quota))
         return
     # TODO(check): real lookup logic (spec pending). Quota accounting is live.
     note = t(ctx.owner_lang, "ub_check_note", used=result.used, quota=quota)
-    await event.delete()
     if not await notify_owner(ctx, note):
-        await event.respond(note)
+        await _notice(client, chat_id, note, delay=8.0)
+
+
+async def clear_command(event) -> None:
+    """Take a recognised command off the screen.
+
+    Every dot-command is typed in a chat with someone else, so the command
+    itself is the one thing that must not linger there — including when it
+    does nothing, because a switched-off `.mute` still tells the other side
+    what was attempted.
+    """
+    try:
+        await event.delete()
+    except Exception:
+        logger.debug("could not remove a command message", exc_info=True)
 
 
 async def _notice(client: TelegramClient, chat_id: int, text: str, *, delay: float = 2.0) -> None:
@@ -240,6 +262,15 @@ async def _do_send(client: TelegramClient, event: events.NewMessage.Event, ctx: 
     plan = get_plan(gate.tariff)
     chat_id = event.chat_id
 
+    # Cleared here rather than after the limits: every path below is one where
+    # the command has been read and acted on, and a `.send 10 ...` left sitting
+    # in a client's chat because a limit stopped it is the one outcome nobody
+    # wants. The notices that follow explain what happened on their own.
+    try:
+        await event.delete()
+    except Exception:
+        logger.debug(".send: could not remove the command message", exc_info=True)
+
     if not 1 <= count <= plan.send_max_count:
         await _notice(client, chat_id, t(ctx.owner_lang, "ub_send_bad_count", max=plan.send_max_count))
         return
@@ -248,18 +279,29 @@ async def _do_send(client: TelegramClient, event: events.NewMessage.Event, ctx: 
     # BEFORE the send loop so two near-simultaneous .send calls can't both
     # slip through the gate while the first batch is still sending.
     async with get_session() as db:
-        allowed, remaining_seconds = await peek_send_cooldown(db, ctx.owner_user_id, plan.send_cooldown_seconds)
-        if not allowed:
-            minutes = max(1, ceil(remaining_seconds / 60))
-            await db.rollback()
-        else:
+        allowance = await peek_send_allowance(
+            db,
+            ctx.owner_user_id,
+            cooldown_seconds=plan.send_cooldown_seconds,
+            max_per_hour=plan.send_max_per_hour,
+        )
+        if allowance.allowed:
             await mark_send_used(db, ctx.owner_user_id)
             await db.commit()
-    if not allowed:
-        await _notice(client, chat_id, t(ctx.owner_lang, "ub_send_cooldown", minutes=minutes))
+        else:
+            await db.rollback()
+    if not allowance.allowed:
+        minutes = max(1, ceil(allowance.remaining_seconds / 60))
+        # Which limit stopped it matters: "wait 4 minutes" on an exhausted
+        # hour just sends someone back to fail again.
+        text = (
+            t(ctx.owner_lang, "ub_send_hourly", limit=plan.send_max_per_hour, minutes=minutes)
+            if allowance.reason == "hourly"
+            else t(ctx.owner_lang, "ub_send_cooldown", minutes=minutes)
+        )
+        await _notice(client, chat_id, text)
         return
 
-    await event.delete()
     for i in range(count):
         try:
             await client.send_message(chat_id, text)
